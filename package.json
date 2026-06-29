@@ -1,0 +1,11 @@
+{
+  "name": "locdoc-hub-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Shared LocDoc Employee Hub UI — design tokens, vanilla web components, and pure scoring logic. Source of truth consumed by the Wix site (teamwix) and the standalone hub app.",
+  "scripts": {
+    "test": "node --test tests/",
+    "sync:teamwix": "node scripts/sync-to-teamwix.mjs"
+  }
+}
