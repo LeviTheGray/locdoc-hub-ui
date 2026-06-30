@@ -22,21 +22,21 @@ const MISSION = 'We Help our Customers Protect Their People and Their Property.'
 // Core Values — "trait / principle" pairs (EOS wall model) with the definitions from
 // /core-values, revealed on hover/tap.
 const CORE_VALUES = [
-  { trait: 'Defined',     value: 'Expectations',   icon: 'checklist',
+  { trait: 'Defined',     value: 'Expectations',   icon: 'crisis_alert',
     desc: "Don't be frustrated with unmet expectations when YOU have not clearly set them. Can the customer or teammate execute the expectations without further explanation?" },
-  { trait: 'Courageous',  value: 'Honesty',        icon: 'volunteer_activism',
-    desc: "Handle the truth with courage early and often. Don't hide things, cover up or keep things from your teammates or customers." },
-  { trait: 'Consistent',  value: 'Communication',  icon: 'forum',
+  { trait: 'Consistent',  value: 'Communication',  icon: 'sync',
     desc: "Always communicate clear and important information that will impact our customers and our team." },
-  { trait: 'Refined',     value: 'Quality',        icon: 'workspace_premium',
-    desc: "Factory specifications are met, shortcuts are not taken. Quality over Quantity and customer satisfaction is primary." },
   { trait: 'Cultivate',   value: 'Trust',          icon: 'handshake',
     desc: "Start small, have patience and be consistent. Consistency builds trust!" },
+  { trait: 'Outrageous',  value: 'Kindness',       icon: 'redeem',
+    desc: "Treat team members, customers and your family BETTER than you want to be treated." },
+  { trait: 'Courageous',  value: 'Honesty',        icon: 'visibility',
+    desc: "Handle the truth with courage early and often. Don't hide things, cover up or keep things from your teammates or customers." },
+  { trait: 'Refined',     value: 'Quality',        icon: 'workspace_premium',
+    desc: "Factory specifications are met, shortcuts are not taken. Quality over Quantity and customer satisfaction is primary." },
   { trait: 'Unexpected',  value: 'Cleanliness',    icon: 'cleaning_services',
     desc: "Jobsite, workspace, uniforms, tools, products, installations. Everything WE touch, should be left cleaner than when we started." },
-  { trait: 'Outrageous',  value: 'Kindness',       icon: 'favorite',
-    desc: "Treat team members, customers and your family BETTER than you want to be treated." },
-  { trait: 'Intentional', value: 'Execution',      icon: 'bolt',
+  { trait: 'Intentional', value: 'Execution',      icon: 'task_alt',
     desc: "Define what winning looks like and don't give up until it's finished. Prior Planning Prevents Poor Performance." },
 ];
 
@@ -162,32 +162,25 @@ const STYLES = `
     color: var(--gray-400); padding-bottom: 12px; margin-bottom: 22px; border-bottom: 1px solid var(--gray-200);
   }
 
-  /* Core Values — even 2-column grid; definition reveals on hover (desktop) / tap (toggles .open) */
-  .values-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  /* Core Values — seamless mosaic of tall centered tiles; tiles alternate white / light-green.
+     Refined Material Symbols line-art glyph on top, two-line UPPERCASE title, definition below. */
+  .values-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    border: 1.5px solid var(--gray-200); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+  }
   .value-card {
-    background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow);
-    padding: 18px 18px; cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit;
-    transition: border-color .15s, box-shadow .15s, transform .12s; -webkit-tap-highlight-color: transparent;
+    background: #fff; padding: 30px 22px 28px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
   }
-  .value-card:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb),.08), var(--shadow-md); transform: translateY(-2px); }
-  .value-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-  .value-top { display: flex; align-items: center; gap: 14px; }
-  .value-icon { width: 44px; height: 44px; border-radius: var(--radius); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--icon-chip-bg); color: var(--icon); }
-  .value-icon .material-symbols-outlined { font-size: 24px; }
-  .value-head { flex: 1; min-width: 0; }
-  .value-trait { font-size: 15px; font-weight: 700; color: var(--gray-900); line-height: 1.2; }
-  .value-name  { font-size: 13px; color: var(--gray-600); margin-top: 2px; }
-  .value-chev { color: var(--gray-400); transition: transform .2s; }
-  .value-desc {
-    font-size: 14px; line-height: 1.55; color: var(--gray-600);
-    max-height: 0; opacity: 0; overflow: hidden; transition: max-height .25s ease, opacity .2s ease, margin-top .25s ease;
+  .value-card:nth-child(even) { background: var(--icon-chip-bg); }
+  .value-glyph.material-symbols-outlined {
+    font-size: 46px; color: var(--primary-dk);
+    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 48;
   }
-  .value-card.open .value-desc { max-height: 240px; opacity: 1; margin-top: 14px; }
-  .value-card.open .value-chev { transform: rotate(180deg); }
-  @media (hover: hover) {
-    .value-card:hover .value-desc { max-height: 240px; opacity: 1; margin-top: 14px; }
-    .value-card:hover .value-chev { transform: rotate(180deg); }
-  }
+  .value-title { display: flex; flex-direction: column; gap: 3px; }
+  .vt-trait { font-size: 12px; font-weight: 400; letter-spacing: .2em; text-transform: uppercase; color: var(--gray-600); }
+  .vt-name  { font-size: 18px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--gray-900); line-height: 1.1; }
+  .value-desc { font-size: 13.5px; line-height: 1.55; color: var(--gray-600); max-width: 26ch; }
 
   /* Generic content cards */
   .cards { display: grid; gap: 16px; }
@@ -228,6 +221,7 @@ const STYLES = `
 
   .note { font-size: 13px; color: var(--gray-600); font-style: italic; margin-top: 4px; }
 
+  @media (max-width: 880px) { .values-grid { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 600px) {
     .header { padding: 12px 16px; }
     .hero { padding: 40px 16px; }
@@ -246,28 +240,17 @@ class MissionVision extends HTMLElement {
   connectedCallback() {
     ensureMaterialSymbols();
     this._render();
-    // Tap/click a value card to toggle its definition (hover reveals it on desktop).
-    this.shadowRoot.addEventListener('click', (e) => {
-      const card = e.target.closest('.value-card');
-      if (card) {
-        const open = card.classList.toggle('open');
-        card.setAttribute('aria-expanded', open ? 'true' : 'false');
-      }
-    });
   }
 
   _valueCard(v) {
     return `
-      <div class="value-card" role="button" tabindex="0" aria-expanded="false">
-        <div class="value-top">
-          <div class="value-icon"><span class="material-symbols-outlined">${v.icon}</span></div>
-          <div class="value-head">
-            <div class="value-trait">${v.trait}</div>
-            <div class="value-name">${v.value}</div>
-          </div>
-          <span class="value-chev material-symbols-outlined">expand_more</span>
+      <div class="value-card">
+        <span class="value-glyph material-symbols-outlined">${v.icon}</span>
+        <div class="value-title">
+          <span class="vt-trait">${v.trait}</span>
+          <span class="vt-name">${v.value}</span>
         </div>
-        <div class="value-desc">${v.desc}</div>
+        <p class="value-desc">${v.desc}</p>
       </div>`;
   }
 
