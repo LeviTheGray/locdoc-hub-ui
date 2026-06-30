@@ -14,7 +14,7 @@
  * set the tag name to `hub-home`, and give the element the ID `hubHome`.
  */
 
-import { TOKENS } from './tokens.js';
+import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
 const PAGE_KEYS = ['assessment', 'weeklyReport', 'myReports', 'cleanlinessAudit', 'teamReports', 'cleanlinessReport', 'oneOnOne', 'techSpotlight'];
 
@@ -23,30 +23,30 @@ const PAGE_KEYS = ['assessment', 'weeklyReport', 'myReports', 'cleanlinessAudit'
 //   submit    → middle row (the three submit cards)
 //   manager   → bottom row (Manager Reporting; shown only to managers)
 const ALL_TOOLS = [
-  { key: 'myReports',    level: 'scorecard', icon: '📊', iconClass: 'blue',  name: 'My Scorecard',
+  { key: 'myReports',    level: 'scorecard', icon: 'leaderboard',  name: 'My Scorecard',
     desc: 'Your measurables, score, streak and badges — assessments, weekly reports and more, all in one place.',
     btnText: 'View My Scorecard' },
 
-  { key: 'weeklyReport', level: 'submit', icon: '📝', iconClass: 'amber', name: 'Submit Weekly Report',
+  { key: 'weeklyReport', level: 'submit', icon: 'edit_note', name: 'Submit Weekly Report',
     desc: 'Submit your weekly check-in: stress, morale, workload, and your highs and lows.',
     btnText: 'Submit Weekly Report' },
-  { key: 'assessment',   level: 'submit', icon: '📋', iconClass: 'green', name: 'Team Assessments',
+  { key: 'assessment',   level: 'submit', icon: 'fact_check', name: 'Team Assessments',
     desc: 'Rate your teammates on the six core criteria. Monthly — one assessment per person.',
     btnText: 'Start Assessment' },
-  { key: 'cleanlinessAudit', level: 'submit', icon: '🧹', iconClass: 'amber', name: 'Cleanliness Audit',
+  { key: 'cleanlinessAudit', level: 'submit', icon: 'cleaning_services', name: 'Cleanliness Audit',
     desc: 'Submit this week\'s cleanliness audit for your branch, with scores and photos.',
     btnText: 'Submit Audit' },
-  { key: 'techSpotlight', level: 'submit', icon: '🔧', iconClass: 'green', name: 'Submit a Tech Spotlight',
+  { key: 'techSpotlight', level: 'submit', icon: 'handyman', name: 'Submit a Tech Spotlight',
     desc: 'Share a job you\'re proud of — photos plus the problem and how you solved it — to present at the Wednesday meeting.',
     btnText: 'Submit Spotlight' },
 
-  { key: 'teamReports',  level: 'manager', icon: '👥', iconClass: 'green', name: 'Team Scorecard (Manager View)',
+  { key: 'teamReports',  level: 'manager', icon: 'groups', name: 'Team Scorecard (Manager View)',
     desc: 'The Monthly Manager Meeting view: your meeting checklist, team scores and leaderboard for the people you manage.',
     btnText: 'View Team Scorecard' },
-  { key: 'cleanlinessReport', level: 'manager', icon: '📈', iconClass: 'blue', name: 'Cleanliness Report',
+  { key: 'cleanlinessReport', level: 'manager', icon: 'monitoring', name: 'Cleanliness Report',
     desc: 'Weekly cleanliness results for your branches: non-submitters, score trends and photos.',
     btnText: 'View Cleanliness Report' },
-  { key: 'oneOnOne', level: 'manager', icon: '🤝', iconClass: 'amber', name: 'Submit a 1:1',
+  { key: 'oneOnOne', level: 'manager', icon: 'handshake', name: 'Submit a 1:1',
     desc: 'Log a one-on-one meeting with a team member you manage — notes and follow-ups, counted on their scorecard.',
     btnText: 'Submit a 1:1' },
 ];
@@ -74,11 +74,12 @@ const STYLES = `
     display: flex; flex-direction: column; align-items: center; gap: 12px;
     transition: border-color .15s, box-shadow .15s, transform .12s; -webkit-tap-highlight-color: transparent;
   }
-  .tool-tile:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(79,100,152,.10), var(--shadow-md); transform: translateY(-2px); }
+  .tool-tile:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb),.10), var(--shadow-md); transform: translateY(-2px); }
   .tool-tile:active { transform: scale(.98); }
   .tool-tile.is-loading { pointer-events: none; opacity: .9; border-color: var(--primary); }
-  .tool-icon { width: 56px; height: 56px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
-  .tool-icon.green { background: #e2ece0; } .tool-icon.blue { background: #e2e7f0; } .tool-icon.amber { background: #fef3c7; }
+  /* OMS icon strategy: single brand tint on a neutral chip, Material Symbols glyph. */
+  .tool-icon { width: 56px; height: 56px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--icon-chip-bg); color: var(--icon); }
+  .tool-icon .material-symbols-outlined { font-size: 30px; }
   .tile-name { font-size: 13px; font-weight: 700; line-height: 1.3; color: var(--gray-900); }
   .tile-info {
     position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%;
@@ -93,12 +94,13 @@ const STYLES = `
     text-align: left; padding: 10px 12px; border-radius: 8px; box-shadow: var(--shadow-md);
   }
   .tile-pop.open { display: block; }
-  .btn-spinner { display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border: 2px solid rgba(79,100,152,.4); border-top-color: var(--primary); border-radius: 50%; animation: btnspin .6s linear infinite; }
+  .btn-spinner { display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border: 2px solid rgba(var(--primary-rgb),.4); border-top-color: var(--primary); border-radius: 50%; animation: btnspin .6s linear infinite; }
   @keyframes btnspin { to { transform: rotate(360deg); } }
   @media (max-width: 600px) {
     .main { padding: 24px 12px; } .welcome h2 { font-size: 20px; }
     .tools-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
-    .tool-icon { width: 48px; height: 48px; font-size: 22px; }
+    .tool-icon { width: 48px; height: 48px; }
+    .tool-icon .material-symbols-outlined { font-size: 26px; }
     .tool-tile { padding: 16px 8px 14px; }
   }
 `;
@@ -115,6 +117,7 @@ class HubHome extends HTMLElement {
   }
 
   connectedCallback() {
+    ensureMaterialSymbols();
     this._renderShell();
     if (this.hasAttribute('init-data')) this._applyData(this.getAttribute('init-data'));
   }
@@ -183,7 +186,7 @@ class HubHome extends HTMLElement {
     return `
       <div class="tool-tile" data-key="${t.key}">
         <button class="tile-info" data-info="${t.key}" aria-label="About ${t.name}">i</button>
-        <div class="tool-icon ${t.iconClass}">${t.icon}</div>
+        <div class="tool-icon"><span class="material-symbols-outlined">${t.icon}</span></div>
         <div class="tile-name">${t.name}</div>
         <div class="tile-pop" data-pop="${t.key}">${t.desc}</div>
       </div>`;

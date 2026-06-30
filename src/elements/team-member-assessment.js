@@ -70,7 +70,7 @@ const STYLES = `
   .count-pill { font-size: 12px; font-weight: 600; background: var(--gray-100); color: var(--gray-600); border-radius: 100px; padding: 3px 10px; }
   .emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
   .emp-card { background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius); padding: 18px; cursor: pointer; box-shadow: var(--shadow); transition: border-color .15s, box-shadow .15s, transform .12s; }
-  .emp-card:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(79,100,152,.1), var(--shadow-md); transform: translateY(-2px); }
+  .emp-card:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb),.1), var(--shadow-md); transform: translateY(-2px); }
   .emp-card:active { transform: scale(.98); border-color: var(--primary); }
   .emp-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-lt), var(--primary)); color: #fff; font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
   .emp-name { font-size: 14px; font-weight: 700; line-height: 1.3; }

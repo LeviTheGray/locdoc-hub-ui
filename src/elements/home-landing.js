@@ -19,7 +19,7 @@
  * set the tag name to `home-landing`, and give the element the ID `homeLanding`.
  */
 
-import { TOKENS } from './tokens.js';
+import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
 // Internal destinations (handled by Velo via the 'navigate' event) must list their key here.
 const INTERNAL_KEYS = ['hub'];
@@ -38,8 +38,7 @@ const DESTINATIONS = [
   { 
     key: 'meetings',
     href: 'https://team.locdoc.net/meetings',
-    icon: '🗓️',
-    iconClass: 'green', 
+    icon: 'calendar_month',
     name: 'Weekly Meetings',
     desc: 'Weekly Meeting Links',
     btnText: 'Go to Meetings' 
@@ -47,8 +46,7 @@ const DESTINATIONS = [
   { 
     key: 'oms', 
     href: 'https://app.openingmanagement.com', 
-    icon: '🛠️', 
-    iconClass: 'blue', 
+    icon: 'build',
     name: 'OMS',
     desc: 'Open the operations management system.',
     btnText: 'Open OMS' 
@@ -56,8 +54,7 @@ const DESTINATIONS = [
   { 
     key: 'profit-sharing', 
     href: 'https://team.locdoc.net/profitsharing', 
-    icon: '💰', 
-    iconClass: 'amber', 
+    icon: 'payments',
     name: 'Profit Sharing',
     desc: 'Information and updates regarding the employee profit sharing program.',
     btnText: 'View Profit Sharing' 
@@ -65,8 +62,7 @@ const DESTINATIONS = [
   { 
     key: 'benefits', 
     href: 'https://team.locdoc.net/employee-benefits', 
-    icon: '🏥', 
-    iconClass: 'purple', 
+    icon: 'local_hospital',
     name: 'My Benefits',
     desc: 'Access your health, dental, and other employee benefits information.',
     btnText: 'View Benefits' 
@@ -74,8 +70,7 @@ const DESTINATIONS = [
   { 
     key: 'events', 
     href: 'https://team.locdoc.net/annualevents', 
-    icon: '🎉', 
-    iconClass: 'pink', 
+    icon: 'celebration',
     name: 'Company Events',
     desc: 'Stay up to date on annual company gatherings and upcoming events.',
     btnText: 'View Events' 
@@ -83,8 +78,7 @@ const DESTINATIONS = [
   { 
     key: 'mission-vision', 
     href: 'https://team.locdoc.net/vto', 
-    icon: '🎯', 
-    iconClass: 'red', 
+    icon: 'flag',
     name: 'Mission & Vision',
     desc: 'Read about our core values, mission, and long-term vision.',
     btnText: 'View Mission & Vision' 
@@ -92,8 +86,7 @@ const DESTINATIONS = [
   { 
     key: 'policies', 
     href: 'https://team.locdoc.net/resource', 
-    icon: '📋', 
-    iconClass: 'teal', 
+    icon: 'policy',
     name: 'Policies',
     desc: 'Important company policies, guidelines, and internal resources.',
     btnText: 'View Policies' 
@@ -101,8 +94,7 @@ const DESTINATIONS = [
   { 
     key: 'handbook', 
     href: 'https://drive.google.com/file/d/1vyxYUy9d72Q55s3kofm9NRTSoVuvCk9R/view?usp=sharing', 
-    icon: '📖', 
-    iconClass: 'indigo', 
+    icon: 'menu_book',
     name: 'Employee Handbook',
     desc: 'Read the official employee handbook for general rules and expectations.',
     btnText: 'Open Handbook' 
@@ -110,8 +102,7 @@ const DESTINATIONS = [
   { 
     key: 'nexus-hub', 
     href: 'https://team.locdoc.net/nexus', // Placeholder - update with the real URL
-    icon: '🖥️', 
-    iconClass: 'cyan', 
+    icon: 'support_agent',
     name: 'Nexus Hub',
     desc: 'Submit IT support tickets and track lab project management.',
     btnText: 'Open Nexus Hub' 
@@ -155,7 +146,7 @@ const STYLES = `
   .hero-cta:hover { background: var(--gray-100); }
   .hero-cta:active { transform: scale(.97); }
   .hero-cta.is-loading { cursor: default; opacity: .85; pointer-events: none; }
-  .hero-cta .btn-spinner { border-color: rgba(79,100,152,.35); border-top-color: var(--primary-dk); }
+  .hero-cta .btn-spinner { border-color: rgba(var(--primary-rgb),.35); border-top-color: var(--primary-dk); }
 
   /* Calendar band */
   .cal-band { max-width: 980px; margin: 0 auto; padding: 36px 16px 0; }
@@ -180,13 +171,12 @@ const STYLES = `
     display: flex; flex-direction: column; align-items: center; gap: 12px;
     transition: border-color .15s, box-shadow .15s, transform .12s; -webkit-tap-highlight-color: transparent;
   }
-  .tool-tile:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(79,100,152,.08), var(--shadow-md); transform: translateY(-2px); }
+  .tool-tile:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb),.08), var(--shadow-md); transform: translateY(-2px); }
   .tool-tile:active { transform: scale(.98); }
   .tool-tile.is-loading { pointer-events: none; opacity: .9; border-color: var(--primary); }
-  .tool-icon { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
-  .tool-icon.green { background: #d1fae5; } .tool-icon.blue { background: #dbeafe; } .tool-icon.amber { background: #fef3c7; }
-  .tool-icon.purple { background: #ede9fe; } .tool-icon.pink { background: #fce7f3; } .tool-icon.red { background: #fee2e2; }
-  .tool-icon.teal { background: #ccfbf1; } .tool-icon.indigo { background: #e0e7ff; } .tool-icon.cyan { background: #cffafe; }
+  /* OMS icon strategy: single brand tint on a neutral chip, Material Symbols glyph. */
+  .tool-icon { width: 56px; height: 56px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--icon-chip-bg); color: var(--icon); }
+  .tool-icon .material-symbols-outlined { font-size: 30px; }
   .tile-name { font-size: 13px; font-weight: 700; line-height: 1.3; color: var(--gray-900); }
   .tile-ext { position: absolute; top: 9px; left: 10px; font-size: 11px; color: var(--gray-400); }
   .tile-info {
@@ -211,7 +201,8 @@ const STYLES = `
     .hero h2 { font-size: 26px; }
     .main { padding: 32px 12px 44px; }
     .tools-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
-    .tool-icon { width: 48px; height: 48px; font-size: 22px; }
+    .tool-icon { width: 48px; height: 48px; }
+    .tool-icon .material-symbols-outlined { font-size: 26px; }
     .tool-tile { padding: 16px 8px 14px; }
   }
 `;
@@ -227,6 +218,7 @@ class HomeLanding extends HTMLElement {
   }
 
   connectedCallback() {
+    ensureMaterialSymbols();
     this._renderShell();
     if (this.hasAttribute('init-data')) this._applyData(this.getAttribute('init-data'));
   }
@@ -313,7 +305,7 @@ class HomeLanding extends HTMLElement {
       <div class="tool-tile" data-key="${d.key}">
         ${ext}
         <button class="tile-info" data-info="${d.key}" aria-label="About ${d.name}">i</button>
-        <div class="tool-icon ${d.iconClass}">${d.icon}</div>
+        <div class="tool-icon"><span class="material-symbols-outlined">${d.icon}</span></div>
         <div class="tile-name">${d.name}</div>
         <div class="tile-pop" data-pop="${d.key}">${d.desc}</div>
       </div>`;

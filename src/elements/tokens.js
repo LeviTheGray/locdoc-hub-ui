@@ -16,20 +16,24 @@
  */
 
 // Brand palette + spacing/shadow tokens, scoped to the shadow root via :host.
-// Re-based on the OMS3 design standard (see DESIGN_SYSTEM.md): slate-blue primary,
-// green as a secondary accent, repeater surface convention, OMS radius + status colors.
+// Built on the OMS3 design standard (see DESIGN_SYSTEM.md) — same tone/contrast relationships —
+// but re-hued to LocDoc green (OMS3's secondary.main #64984f) as the primary brand color, since
+// the company is green internally. Slate-blue is kept available as --accent-slate.
 export const TOKENS = `
   :host {
-    /* Brand — OMS3 light palette. --green kept as an alias of the secondary accent
-       so older element CSS that still references it keeps working. */
-    --primary: #4f6498; --primary-dk: #3f5079; --primary-lt: #687eb1;
-    --secondary: #64984f; --green: #64984f; --green-dk: #4f7a3f; --green-lt: #64984f;
-    --accent-violet: #5F4F98; --accent-teal: #4F8898; --accent-rust: #985F4F;
+    /* Brand — LocDoc green primary (OMS3 green tones). --green kept as an alias so older element
+       CSS that references it keeps working. --primary-rgb mirrors --primary for rgba() glows. */
+    --primary: #64984f; --primary-dk: #4f7a3f; --primary-lt: #82b06d; --primary-rgb: 100,152,79;
+    --secondary: #4f6498; --green: #64984f; --green-dk: #4f7a3f; --green-lt: #82b06d;
+    --accent-slate: #4f6498; --accent-violet: #5F4F98; --accent-teal: #4F8898; --accent-rust: #985F4F;
+
+    /* Icon tint — green to match the brand (same dark-glyph-on-light-chip contrast as OMS). */
+    --icon: #4f7a3f; --icon-chip-bg: #e2ece0;
 
     /* Surfaces — repeater convention */
     --surface: #F4F4F8;    /* repeater.main      */
     --bg: #fefefe;         /* background.default */
-    --header-bar: #4f6498; /* repeater.headerBar */
+    --header-bar: #4f7a3f; /* green header bar (OMS3 dark-theme headerBar tone) */
     --white: #fefefe;      /* common.white (intentionally not pure white) */
 
     --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
@@ -48,6 +52,17 @@ export const TOKENS = `
     color: var(--gray-900);
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* Material Symbols glyphs (OMS icon strategy). The font is loaded once into the document
+     head by ensureMaterialSymbols() — @font-face is global so it pierces the shadow root.
+     Until it loads, the ligature text is hidden to avoid a flash of the raw word. */
+  .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal;
+    line-height: 1; letter-spacing: normal; text-transform: none; white-space: nowrap;
+    word-wrap: normal; direction: ltr; display: inline-block; font-size: inherit;
+    -webkit-font-smoothing: antialiased; -webkit-font-feature-settings: 'liga';
+    font-feature-settings: 'liga'; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
 `;
 
 // Reusable component patterns shared across the hub (green header bar, card, icon chip, button,
@@ -82,4 +97,18 @@ export const COMPONENTS = `
 // Convenience: compose tokens + shared components + element-specific CSS into one stylesheet.
 export function styles(...extra) {
   return `${TOKENS}${COMPONENTS}${extra.join('\n')}`;
+}
+
+// Material Symbols loader (OMS icon strategy). Injects the Google Fonts stylesheet once into the
+// document head; @font-face is not scoped to a shadow root, so the glyph spans render inside every
+// element. Idempotent and SSR-safe — call from each element's connectedCallback().
+export function ensureMaterialSymbols() {
+  if (typeof document === 'undefined') return;
+  const ID = 'locdoc-material-symbols';
+  if (document.getElementById(ID)) return;
+  const link = document.createElement('link');
+  link.id = ID;
+  link.rel = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200';
+  document.head.appendChild(link);
 }

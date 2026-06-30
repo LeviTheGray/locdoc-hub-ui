@@ -135,7 +135,7 @@ const STYLES = `
   .cl-thumb { border: 1px solid var(--gray-200); border-radius: 8px; overflow: hidden; background: var(--gray-100); }
   .cl-thumb img { width: 100%; height: 80px; object-fit: cover; display: block; }
   .tile-caret { margin-left: auto; font-size: 10px; color: var(--gray-400); align-self: flex-start; }
-  .tile.active { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,100,152,.10), var(--shadow-md); }
+  .tile.active { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb),.10), var(--shadow-md); }
   .panel { background: var(--gray-50); border: 1.5px solid var(--primary); border-radius: var(--radius); padding: 18px 16px 22px; margin-top: 14px; box-shadow: var(--shadow); }
   .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .panel-title { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
