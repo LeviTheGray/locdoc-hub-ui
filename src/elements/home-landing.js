@@ -149,7 +149,8 @@ const STYLES = `
   .hero-cta .btn-spinner { border-color: rgba(var(--primary-rgb),.35); border-top-color: var(--primary-dk); }
 
   /* Calendar band */
-  .cal-band { max-width: 980px; margin: 0 auto; padding: 36px 16px 0; }
+  .cal-band { max-width: 980px; margin: 0 auto; padding: 0 16px 56px; }
+  .cal-title { margin-bottom: 16px; }
   .cal-frame {
     background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius);
     box-shadow: var(--shadow); overflow: hidden;
@@ -249,16 +250,17 @@ class HomeLanding extends HTMLElement {
         <p>One place for the team — reports, scorecards, meetings and the tools you use every day.</p>
         <button class="hero-cta" data-key="hub">Go to Employee Hub &#8594;</button>
       </section>
-      ${CALENDAR_EMBED_SRC ? `
-      <section class="cal-band">
-        <div class="cal-frame">
-          <iframe src="${CALENDAR_EMBED_SRC}" title="Team Calendar" loading="lazy" scrolling="no"></iframe>
-        </div>
-      </section>` : ''}
       <main class="main">
         <div class="grid-title">Destinations</div>
         <div class="tools-grid" data-cards></div>
-      </main>`;
+      </main>
+      ${CALENDAR_EMBED_SRC ? `
+      <section class="cal-band">
+        <div class="grid-title cal-title">Team Calendar</div>
+        <div class="cal-frame">
+          <iframe src="${CALENDAR_EMBED_SRC}" title="Team Calendar" loading="lazy" scrolling="no"></iframe>
+        </div>
+      </section>` : ''}`;
     this.shadowRoot.addEventListener('click', (e) => {
       const info = e.target.closest('[data-info]');
       if (info) { e.stopPropagation(); this._toggleInfo(info.getAttribute('data-info')); return; }
