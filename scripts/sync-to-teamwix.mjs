@@ -37,12 +37,15 @@ function applyBanner(src, srcRel, mode) {
 }
 
 const CE = join(teamwix, 'src', 'public', 'custom-elements');
+const ELEMENTS = [
+  'tokens.js', 'hub-home.js', 'home-landing.js', 'my-reports.js',
+  'weekly-report.js', 'cleanliness-audit.js', 'team-member-assessment.js',
+  'tech-spotlight-submit.js', 'one-on-one.js', 'team-reports.js',
+  'cleanliness-report.js', 'wednesday-meeting.js',
+];
 const targets = [
-  { src: 'src/scoring-core.js',          to: join(teamwix, 'src', 'backend', 'scoring-core.js'), mode: 'replace' },
-  { src: 'src/elements/tokens.js',       to: join(CE, 'tokens.js'),       mode: 'prepend' },
-  { src: 'src/elements/hub-home.js',     to: join(CE, 'hub-home.js'),     mode: 'prepend' },
-  { src: 'src/elements/home-landing.js', to: join(CE, 'home-landing.js'), mode: 'prepend' },
-  { src: 'src/elements/my-reports.js',   to: join(CE, 'my-reports.js'),   mode: 'prepend' },
+  { src: 'src/scoring-core.js', to: join(teamwix, 'src', 'backend', 'scoring-core.js'), mode: 'replace' },
+  ...ELEMENTS.map(name => ({ src: `src/elements/${name}`, to: join(CE, name), mode: 'prepend' })),
 ];
 
 for (const { src, to, mode } of targets) {
