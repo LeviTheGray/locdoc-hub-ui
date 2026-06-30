@@ -116,13 +116,15 @@ const PICTURES = [
   },
 ];
 
-// Regional target maps (NC/SC/GA/FL with city pins) per horizon. Paste each map's Wix media URL
-// here — Editor → upload to Media, then copy the image URL (e.g. https://static.wixstatic.com/...).
-// Leave '' to hide the image for that horizon.
+// Regional target maps (NC/SC/GA/FL with city pins) per horizon. Values are public Wix media URLs
+// (the static.wixstatic.com form of a `wix:image://v1/<id>/<file>` reference). Leave '' to hide a
+// horizon's image. NOTE: all three currently point at the same "Southeast 2024" map — the intent
+// is to give 3yr/10yr their own versions with the expanded branch pins once those are created.
+const SE_MAP_2024 = 'https://static.wixstatic.com/media/590ac2_495991a216cc4e85978b9d1976eaa101~mv2.png';
 const MAP_URLS = {
-  '1yr': '',
-  '3yr': '',
-  '10yr': '',
+  '1yr': SE_MAP_2024,
+  '3yr': SE_MAP_2024,
+  '10yr': SE_MAP_2024,
 };
 
 const ROCKS = {
