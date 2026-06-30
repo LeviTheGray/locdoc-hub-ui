@@ -165,14 +165,19 @@ const STYLES = `
   /* Core Values — seamless mosaic of tall centered tiles; tiles alternate white / light-green.
      Refined Material Symbols line-art glyph on top, two-line UPPERCASE title, definition below. */
   .values-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr);
-    border: 1.5px solid var(--gray-200); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px;
+    background: var(--gray-200); border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
   }
   .value-card {
     background: #fff; padding: 30px 22px 28px; text-align: center;
     display: flex; flex-direction: column; align-items: center; gap: 16px;
   }
-  .value-card:nth-child(even) { background: var(--icon-chip-bg); }
+  /* True 4-col checkerboard (period of 8): green tiles at positions 2,4,5,7. */
+  @media (min-width: 881px) {
+    .value-card:nth-child(8n+2), .value-card:nth-child(8n+4),
+    .value-card:nth-child(8n+5), .value-card:nth-child(8n+7) { background: var(--icon-chip-bg); }
+  }
   .value-glyph.material-symbols-outlined {
     font-size: 46px; color: var(--primary-dk);
     font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 48;
@@ -221,13 +226,19 @@ const STYLES = `
 
   .note { font-size: 13px; color: var(--gray-600); font-style: italic; margin-top: 4px; }
 
-  @media (max-width: 880px) { .values-grid { grid-template-columns: repeat(2, 1fr); } }
+  /* 2-col checkerboard (period of 4): green at positions 2,3. */
+  @media (min-width: 601px) and (max-width: 880px) {
+    .values-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .value-card:nth-child(4n+2), .value-card:nth-child(4n+3) { background: var(--icon-chip-bg); }
+  }
   @media (max-width: 600px) {
     .header { padding: 12px 16px; }
     .hero { padding: 40px 16px; }
     .hero .vision { font-size: 21px; }
     .main { padding: 32px 12px 44px; }
     .values-grid { grid-template-columns: 1fr; }
+    .value-card { background: #fff; }
+    .value-card:nth-child(even) { background: var(--icon-chip-bg); }
   }
 `;
 
