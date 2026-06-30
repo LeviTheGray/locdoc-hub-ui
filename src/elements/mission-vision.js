@@ -19,16 +19,25 @@ import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 const VISION = 'Transform the Southeast to a unified and systematized Security Solutions provider through engaging training programs, acquisitions and continued development of digital opening management systems.';
 const MISSION = 'We Help our Customers Protect Their People and Their Property.';
 
-// Core Values — "trait / principle" pairs from the EOS wall model.
+// Core Values — "trait / principle" pairs (EOS wall model) with the definitions from
+// /core-values, revealed on hover/tap.
 const CORE_VALUES = [
-  { trait: 'Defined',     value: 'Expectations',   icon: 'checklist' },
-  { trait: 'Courageous',  value: 'Honesty',        icon: 'volunteer_activism' },
-  { trait: 'Consistent',  value: 'Communication',  icon: 'forum' },
-  { trait: 'Refined',     value: 'Quality',        icon: 'workspace_premium' },
-  { trait: 'Cultivate',   value: 'Trust',          icon: 'handshake' },
-  { trait: 'Unexpected',  value: 'Cleanliness',    icon: 'cleaning_services' },
-  { trait: 'Outrageous',  value: 'Kindness',       icon: 'favorite' },
-  { trait: 'Intentional', value: 'Execution',      icon: 'bolt' },
+  { trait: 'Defined',     value: 'Expectations',   icon: 'checklist',
+    desc: "Don't be frustrated with unmet expectations when YOU have not clearly set them. Can the customer or teammate execute the expectations without further explanation?" },
+  { trait: 'Courageous',  value: 'Honesty',        icon: 'volunteer_activism',
+    desc: "Handle the truth with courage early and often. Don't hide things, cover up or keep things from your teammates or customers." },
+  { trait: 'Consistent',  value: 'Communication',  icon: 'forum',
+    desc: "Always communicate clear and important information that will impact our customers and our team." },
+  { trait: 'Refined',     value: 'Quality',        icon: 'workspace_premium',
+    desc: "Factory specifications are met, shortcuts are not taken. Quality over Quantity and customer satisfaction is primary." },
+  { trait: 'Cultivate',   value: 'Trust',          icon: 'handshake',
+    desc: "Start small, have patience and be consistent. Consistency builds trust!" },
+  { trait: 'Unexpected',  value: 'Cleanliness',    icon: 'cleaning_services',
+    desc: "Jobsite, workspace, uniforms, tools, products, installations. Everything WE touch, should be left cleaner than when we started." },
+  { trait: 'Outrageous',  value: 'Kindness',       icon: 'favorite',
+    desc: "Treat team members, customers and your family BETTER than you want to be treated." },
+  { trait: 'Intentional', value: 'Execution',      icon: 'bolt',
+    desc: "Define what winning looks like and don't give up until it's finished. Prior Planning Prevents Poor Performance." },
 ];
 
 const CORE_FOCUS = {
@@ -107,6 +116,15 @@ const PICTURES = [
   },
 ];
 
+// Regional target maps (NC/SC/GA/FL with city pins) per horizon. Paste each map's Wix media URL
+// here — Editor → upload to Media, then copy the image URL (e.g. https://static.wixstatic.com/...).
+// Leave '' to hide the image for that horizon.
+const MAP_URLS = {
+  '1yr': '',
+  '3yr': '',
+  '10yr': '',
+};
+
 const ROCKS = {
   q1: [
     'ESA (Extended Service Agreements)',
@@ -127,15 +145,6 @@ const STYLES = `
   }
   .brand h1 { font-size: 18px; font-weight: 700; }
   .brand p  { font-size: 12px; opacity: .75; margin-top: 2px; }
-  .hub-pill {
-    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-    background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.35);
-    border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
-    transition: background .15s, transform .08s;
-  }
-  .hub-pill:hover { background: rgba(255,255,255,.28); }
-  .hub-pill:active { transform: scale(.97); }
-
   /* Hero — Vision + Mission */
   .hero { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dk) 100%); color: #fff; padding: 52px 24px; text-align: center; }
   .hero .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; opacity: .85; margin-bottom: 14px; }
@@ -151,16 +160,32 @@ const STYLES = `
     color: var(--gray-400); padding-bottom: 12px; margin-bottom: 22px; border-bottom: 1px solid var(--gray-200);
   }
 
-  /* Core Values grid */
-  .values-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  /* Core Values — even 2-column grid; definition reveals on hover (desktop) / tap (toggles .open) */
+  .values-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .value-card {
     background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow);
-    padding: 18px 16px; display: flex; align-items: center; gap: 14px;
+    padding: 18px 18px; cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit;
+    transition: border-color .15s, box-shadow .15s, transform .12s; -webkit-tap-highlight-color: transparent;
   }
+  .value-card:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb),.08), var(--shadow-md); transform: translateY(-2px); }
+  .value-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .value-top { display: flex; align-items: center; gap: 14px; }
   .value-icon { width: 44px; height: 44px; border-radius: var(--radius); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--icon-chip-bg); color: var(--icon); }
   .value-icon .material-symbols-outlined { font-size: 24px; }
+  .value-head { flex: 1; min-width: 0; }
   .value-trait { font-size: 15px; font-weight: 700; color: var(--gray-900); line-height: 1.2; }
   .value-name  { font-size: 13px; color: var(--gray-600); margin-top: 2px; }
+  .value-chev { color: var(--gray-400); transition: transform .2s; }
+  .value-desc {
+    font-size: 14px; line-height: 1.55; color: var(--gray-600);
+    max-height: 0; opacity: 0; overflow: hidden; transition: max-height .25s ease, opacity .2s ease, margin-top .25s ease;
+  }
+  .value-card.open .value-desc { max-height: 240px; opacity: 1; margin-top: 14px; }
+  .value-card.open .value-chev { transform: rotate(180deg); }
+  @media (hover: hover) {
+    .value-card:hover .value-desc { max-height: 240px; opacity: 1; margin-top: 14px; }
+    .value-card:hover .value-chev { transform: rotate(180deg); }
+  }
 
   /* Generic content cards */
   .cards { display: grid; gap: 16px; }
@@ -181,6 +206,8 @@ const STYLES = `
   .pic-head { background: var(--surface); padding: 16px 20px; border-bottom: 1px solid var(--gray-200); }
   .pic-head .label { font-size: 14px; font-weight: 700; color: var(--gray-900); }
   .pic-head .year { font-size: 12px; font-weight: 700; color: var(--primary-dk); letter-spacing: .08em; }
+  .pic-map { background: var(--gray-50); border-bottom: 1px solid var(--gray-200); padding: 12px; }
+  .pic-map img { display: block; width: 100%; height: auto; object-fit: contain; }
   .pic-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 16px; }
   .rev-row { display: flex; align-items: center; justify-content: space-between; font-size: 14px; padding: 5px 0; border-bottom: 1px dashed var(--gray-200); }
   .rev-row:last-of-type { border-bottom: none; }
@@ -204,6 +231,7 @@ const STYLES = `
     .hero { padding: 40px 16px; }
     .hero .vision { font-size: 21px; }
     .main { padding: 32px 12px 44px; }
+    .values-grid { grid-template-columns: 1fr; }
   }
 `;
 
@@ -216,20 +244,28 @@ class MissionVision extends HTMLElement {
   connectedCallback() {
     ensureMaterialSymbols();
     this._render();
+    // Tap/click a value card to toggle its definition (hover reveals it on desktop).
     this.shadowRoot.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-key]');
-      if (btn) this.dispatchEvent(new CustomEvent('navigate', { detail: { key: btn.getAttribute('data-key') }, bubbles: true, composed: true }));
+      const card = e.target.closest('.value-card');
+      if (card) {
+        const open = card.classList.toggle('open');
+        card.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
     });
   }
 
   _valueCard(v) {
     return `
-      <div class="value-card">
-        <div class="value-icon"><span class="material-symbols-outlined">${v.icon}</span></div>
-        <div>
-          <div class="value-trait">${v.trait}</div>
-          <div class="value-name">${v.value}</div>
+      <div class="value-card" role="button" tabindex="0" aria-expanded="false">
+        <div class="value-top">
+          <div class="value-icon"><span class="material-symbols-outlined">${v.icon}</span></div>
+          <div class="value-head">
+            <div class="value-trait">${v.trait}</div>
+            <div class="value-name">${v.value}</div>
+          </div>
+          <span class="value-chev material-symbols-outlined">expand_more</span>
         </div>
+        <div class="value-desc">${v.desc}</div>
       </div>`;
   }
 
@@ -244,9 +280,12 @@ class MissionVision extends HTMLElement {
         <div class="sub-label">Strategic Direction</div>
         <ul class="pic-strat">${p.strategy.map(s => `<li>${s}</li>`).join('')}</ul>
       </div>` : '';
+    const mapUrl = MAP_URLS[p.key];
+    const map = mapUrl ? `<div class="pic-map"><img src="${mapUrl}" alt="${p.label} target markets — NC, SC, GA, FL" loading="lazy"></div>` : '';
     return `
       <div class="pic-card">
         <div class="pic-head"><div class="label">${p.label}</div><div class="year">${p.year}</div></div>
+        ${map}
         <div class="pic-body">
           <div>
             <div class="sub-label">Revenue Targets</div>
@@ -264,7 +303,6 @@ class MissionVision extends HTMLElement {
       <style>${STYLES}</style>
       <header class="header">
         <div class="brand"><h1>Mission &amp; Vision</h1><p>Vision / Traction Organizer™</p></div>
-        <button class="hub-pill" data-key="hub">Employee Hub &#8594;</button>
       </header>
 
       <section class="hero">
