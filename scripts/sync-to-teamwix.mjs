@@ -8,8 +8,8 @@
  *   npm run sync:teamwix              # uses ../teamwix
  *   TEAMWIX_PATH=/path/to/teamwix npm run sync:teamwix
  *
- * Currently synced: scoring-core.js (pure compute). Element/token inlining is added here once
- * the Wix custom-element import question is resolved.
+ * The Wix custom-element runtime DOES resolve sibling imports (validated with a probe), so the
+ * elements import './tokens.js' directly — no inlining needed; we just copy the files.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -24,26 +24,30 @@ if (!existsSync(teamwix)) {
   process.exit(1);
 }
 
-const GENERATED_BANNER =
-`/**
- * ⚠️  GENERATED FILE — DO NOT EDIT HERE.
- * Source of truth: locdoc-hub-ui/src/scoring-core.js
- * Regenerate with: npm run sync:teamwix  (from the locdoc-hub-ui repo)
- */
-`;
-
-// Replace the source's leading JSDoc block with the generated banner, keep the rest verbatim.
-function withBanner(src) {
-  return src.replace(/^\/\*\*[\s\S]*?\*\/\n/, GENERATED_BANNER);
+function bannerFor(srcRel) {
+  return `/**\n * ⚠️  GENERATED FILE — DO NOT EDIT HERE.\n * Source of truth: locdoc-hub-ui/${srcRel}\n * Regenerate with: npm run sync:teamwix  (from the locdoc-hub-ui repo)\n */\n`;
 }
 
+// 'replace' swaps the source's leading JSDoc block for the banner (used where the source header is
+// just docs). 'prepend' keeps the file's own header (e.g. an element's editor-setup notes) and
+// puts a one-line banner above it.
+function applyBanner(src, srcRel, mode) {
+  if (mode === 'replace') return src.replace(/^\/\*\*[\s\S]*?\*\/\n/, bannerFor(srcRel));
+  return `// ⚠️ GENERATED from locdoc-hub-ui/${srcRel} — edit there, run npm run sync:teamwix. Do not edit here.\n` + src;
+}
+
+const CE = join(teamwix, 'src', 'public', 'custom-elements');
 const targets = [
-  { from: join(repoRoot, 'src', 'scoring-core.js'), to: join(teamwix, 'src', 'backend', 'scoring-core.js') },
+  { src: 'src/scoring-core.js',          to: join(teamwix, 'src', 'backend', 'scoring-core.js'), mode: 'replace' },
+  { src: 'src/elements/tokens.js',       to: join(CE, 'tokens.js'),       mode: 'prepend' },
+  { src: 'src/elements/hub-home.js',     to: join(CE, 'hub-home.js'),     mode: 'prepend' },
+  { src: 'src/elements/home-landing.js', to: join(CE, 'home-landing.js'), mode: 'prepend' },
+  { src: 'src/elements/my-reports.js',   to: join(CE, 'my-reports.js'),   mode: 'prepend' },
 ];
 
-for (const { from, to } of targets) {
-  const out = withBanner(readFileSync(from, 'utf8'));
+for (const { src, to, mode } of targets) {
+  const out = applyBanner(readFileSync(join(repoRoot, src), 'utf8'), src, mode);
   writeFileSync(to, out);
-  console.log(`✓ synced ${from.replace(repoRoot + '/', '')} → ${to}`);
+  console.log(`✓ synced ${src} → ${to}`);
 }
 console.log('Done.');

@@ -14,6 +14,8 @@
  * set the tag name to `hub-home`, and give the element the ID `hubHome`.
  */
 
+import { TOKENS } from './tokens.js';
+
 const PAGE_KEYS = ['assessment', 'weeklyReport', 'myReports', 'cleanlinessAudit', 'teamReports', 'cleanlinessReport', 'oneOnOne', 'techSpotlight'];
 
 // Three-level layout:
@@ -50,16 +52,7 @@ const ALL_TOOLS = [
 ];
 
 const STYLES = `
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :host {
-    --green: #15803d; --green-dk: #166534; --gray-50: #f9fafb; --gray-200: #e5e7eb;
-    --gray-400: #9ca3af; --gray-600: #4b5563; --gray-900: #111827;
-    --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
-    --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1);
-    display: block;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: var(--gray-900);
-  }
+  ${TOKENS}
   .header { background: var(--green); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
   .header h1 { font-size: 18px; font-weight: 700; }
   .header p  { font-size: 12px; opacity: .75; margin-top: 2px; }

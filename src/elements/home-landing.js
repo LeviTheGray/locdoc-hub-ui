@@ -19,6 +19,8 @@
  * set the tag name to `home-landing`, and give the element the ID `homeLanding`.
  */
 
+import { TOKENS } from './tokens.js';
+
 // Internal destinations (handled by Velo via the 'navigate' event) must list their key here.
 const INTERNAL_KEYS = ['hub'];
 
@@ -117,18 +119,8 @@ const DESTINATIONS = [
 ];
 
 const STYLES = `
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :host {
-    --green: #15803d; --green-dk: #166534; --green-lt: #10b981;
-    --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
-    --gray-400: #9ca3af; --gray-600: #4b5563; --gray-900: #111827;
-    --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
-    --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1);
-    display: block;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: var(--gray-900);
-    background: var(--gray-50);
-  }
+  ${TOKENS}
+  :host { background: var(--gray-50); }
   /* Header bar with forward-facing Employee Hub pill */
   .header {
     background: var(--green); color: #fff; padding: 14px 24px; box-shadow: var(--shadow-md);
