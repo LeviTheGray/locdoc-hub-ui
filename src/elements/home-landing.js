@@ -172,27 +172,36 @@ const STYLES = `
     font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     color: var(--gray-400); padding-bottom: 12px; margin-bottom: 22px; border-bottom: 1px solid var(--gray-200);
   }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
-  .tool-card {
-    background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius); padding: 24px;
-    box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px;
-    transition: border-color .15s, box-shadow .15s, transform .12s;
+  /* Icon-centric destination tiles (matches hub-home): icon + label, description behind the "i". */
+  .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .tool-tile {
+    position: relative; background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius);
+    padding: 22px 14px 18px; box-shadow: var(--shadow); cursor: pointer; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: border-color .15s, box-shadow .15s, transform .12s; -webkit-tap-highlight-color: transparent;
   }
-  .tool-card:hover { border-color: var(--green); box-shadow: 0 0 0 4px rgba(21,128,61,.08), var(--shadow-md); transform: translateY(-2px); }
-  .tool-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+  .tool-tile:hover { border-color: var(--green); box-shadow: 0 0 0 4px rgba(21,128,61,.08), var(--shadow-md); transform: translateY(-2px); }
+  .tool-tile:active { transform: scale(.98); }
+  .tool-tile.is-loading { pointer-events: none; opacity: .9; border-color: var(--green); }
+  .tool-icon { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
   .tool-icon.green { background: #d1fae5; } .tool-icon.blue { background: #dbeafe; } .tool-icon.amber { background: #fef3c7; }
   .tool-icon.purple { background: #ede9fe; } .tool-icon.pink { background: #fce7f3; } .tool-icon.red { background: #fee2e2; }
-  .tool-icon.teal { background: #ccfbf1; } .tool-icon.indigo { background: #e0e7ff; }
-  .tool-name { font-size: 16px; font-weight: 700; }
-  .tool-desc { font-size: 13px; color: var(--gray-600); line-height: 1.5; flex: 1; }
-  .tool-btn {
-    display: block; width: 100%; padding: 10px 0; background: var(--green); color: #fff; border: none;
-    border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; text-align: center; margin-top: 4px;
-    transition: background .15s, transform .08s;
+  .tool-icon.teal { background: #ccfbf1; } .tool-icon.indigo { background: #e0e7ff; } .tool-icon.cyan { background: #cffafe; }
+  .tile-name { font-size: 13px; font-weight: 700; line-height: 1.3; color: var(--gray-900); }
+  .tile-ext { position: absolute; top: 9px; left: 10px; font-size: 11px; color: var(--gray-400); }
+  .tile-info {
+    position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%;
+    border: 1px solid var(--gray-200); background: var(--gray-50); color: var(--gray-400);
+    font: 700 12px Georgia, 'Times New Roman', serif; font-style: italic; cursor: pointer; padding: 0; line-height: 1;
+    display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s;
   }
-  .tool-btn:hover { background: var(--green-dk); }
-  .tool-btn:active { transform: scale(.97); }
-  .tool-btn.is-loading { background: var(--green-dk); cursor: default; opacity: .85; pointer-events: none; }
+  .tile-info:hover { background: var(--green); color: #fff; border-color: var(--green); }
+  .tile-pop {
+    display: none; position: absolute; top: 32px; right: 8px; left: 8px; z-index: 10;
+    background: var(--gray-900); color: #fff; font-size: 12px; font-weight: 500; line-height: 1.45;
+    text-align: left; padding: 10px 12px; border-radius: 8px; box-shadow: var(--shadow-md);
+  }
+  .tile-pop.open { display: block; }
   .btn-spinner { display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border: 2px solid rgba(255,255,255,.5); border-top-color: #fff; border-radius: 50%; animation: btnspin .6s linear infinite; }
   @keyframes btnspin { to { transform: rotate(360deg); } }
 
@@ -201,7 +210,9 @@ const STYLES = `
     .hero { padding: 40px 16px; }
     .hero h2 { font-size: 26px; }
     .main { padding: 32px 12px 44px; }
-    .cards { grid-template-columns: 1fr; }
+    .tools-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+    .tool-icon { width: 48px; height: 48px; font-size: 22px; }
+    .tool-tile { padding: 16px 8px 14px; }
   }
 `;
 
@@ -254,12 +265,25 @@ class HomeLanding extends HTMLElement {
       </section>` : ''}
       <main class="main">
         <div class="grid-title">Destinations</div>
-        <div class="cards" data-cards></div>
+        <div class="tools-grid" data-cards></div>
       </main>`;
     this.shadowRoot.addEventListener('click', (e) => {
+      const info = e.target.closest('[data-info]');
+      if (info) { e.stopPropagation(); this._toggleInfo(info.getAttribute('data-info')); return; }
       const btn = e.target.closest('[data-key]');
-      if (btn) this._go(btn.getAttribute('data-key'), btn);
+      if (btn) { this._go(btn.getAttribute('data-key'), btn); return; }
+      this._closeInfo(); // tap elsewhere dismisses any open popover
     });
+  }
+
+  _toggleInfo(key) {
+    const pop = this.shadowRoot.querySelector(`.tile-pop[data-pop="${key}"]`);
+    const wasOpen = pop && pop.classList.contains('open');
+    this._closeInfo();
+    if (pop && !wasOpen) pop.classList.add('open');
+  }
+  _closeInfo() {
+    this.shadowRoot.querySelectorAll('.tile-pop.open').forEach(p => p.classList.remove('open'));
   }
 
   _go(key, btn) {
@@ -284,12 +308,14 @@ class HomeLanding extends HTMLElement {
   }
 
   _card(d) {
+    const ext = d.href ? '<span class="tile-ext" title="Opens in a new tab">↗</span>' : '';
     return `
-      <div class="tool-card">
+      <div class="tool-tile" data-key="${d.key}">
+        ${ext}
+        <button class="tile-info" data-info="${d.key}" aria-label="About ${d.name}">i</button>
         <div class="tool-icon ${d.iconClass}">${d.icon}</div>
-        <div class="tool-name">${d.name}</div>
-        <div class="tool-desc">${d.desc}</div>
-        <button class="tool-btn" data-key="${d.key}">${d.btnText}</button>
+        <div class="tile-name">${d.name}</div>
+        <div class="tile-pop" data-pop="${d.key}">${d.desc}</div>
       </div>`;
   }
 
