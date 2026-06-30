@@ -81,7 +81,7 @@ const STYLES = `
   ${TOKENS}
   :host { background: var(--gray-50); }
   .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; color:#6b7280; font:600 13px system-ui,-apple-system,sans-serif; padding:12px 16px 0; }
-  .header { background: var(--green); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
+  .header { background: var(--primary); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
   .header h1 { font-size: 18px; font-weight: 700; }
   .header p  { font-size: 12px; opacity: .75; margin-top: 2px; }
   .main { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
@@ -95,7 +95,7 @@ const STYLES = `
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%236b7280'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center;
   }
-  .toolbar select:focus { outline: 2px solid var(--green); outline-offset: -1px; }
+  .toolbar select:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
   .hero { background: #fff; border: 1px solid var(--gray-200); border-radius: 14px; box-shadow: var(--shadow); padding: 22px 24px; margin-bottom: 18px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
   .ring { position: relative; width: 104px; height: 104px; flex-shrink: 0; }
   .ring svg { transform: rotate(-90deg); }
@@ -109,7 +109,7 @@ const STYLES = `
   .stat .stat-num { font-size: 20px; font-weight: 800; }
   .stat .stat-lab { font-size: 11px; color: var(--gray-400); text-transform: uppercase; letter-spacing: .04em; }
   .level-bar-track { height: 6px; background: var(--gray-100); border-radius: 4px; margin-top: 12px; overflow: hidden; }
-  .level-bar-fill { height: 100%; background: var(--green); border-radius: 4px; }
+  .level-bar-fill { height: 100%; background: var(--primary); border-radius: 4px; }
   .level-next { font-size: 11px; color: var(--gray-400); margin-top: 5px; }
   .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
   .badge { display: inline-flex; align-items: center; gap: 6px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 100px; }
@@ -135,8 +135,8 @@ const STYLES = `
   .cl-thumb { border: 1px solid var(--gray-200); border-radius: 8px; overflow: hidden; background: var(--gray-100); }
   .cl-thumb img { width: 100%; height: 80px; object-fit: cover; display: block; }
   .tile-caret { margin-left: auto; font-size: 10px; color: var(--gray-400); align-self: flex-start; }
-  .tile.active { border-color: var(--green); box-shadow: 0 0 0 3px rgba(21,128,61,.10), var(--shadow-md); }
-  .panel { background: var(--gray-50); border: 1.5px solid var(--green); border-radius: var(--radius); padding: 18px 16px 22px; margin-top: 14px; box-shadow: var(--shadow); }
+  .tile.active { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,100,152,.10), var(--shadow-md); }
+  .panel { background: var(--gray-50); border: 1.5px solid var(--primary); border-radius: var(--radius); padding: 18px 16px 22px; margin-top: 14px; box-shadow: var(--shadow); }
   .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .panel-title { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
   .panel-close { background: none; border: none; font-size: 24px; color: var(--gray-400); cursor: pointer; line-height: 1; }
@@ -145,7 +145,7 @@ const STYLES = `
   .trend-title { font-size: 13px; font-weight: 700; color: var(--gray-900); }
   .range-toggle { display: inline-flex; border: 1px solid var(--gray-200); border-radius: 8px; overflow: hidden; }
   .range-toggle .rt { background: #fff; border: none; padding: 5px 12px; font-size: 12px; font-weight: 700; color: var(--gray-600); cursor: pointer; }
-  .range-toggle .rt.on { background: var(--green); color: #fff; }
+  .range-toggle .rt.on { background: var(--primary); color: #fff; }
   .trend-svg { width: 100%; height: auto; display: block; }
   .trend-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
   .trend-legend .leg { font-size: 11px; font-weight: 600; color: var(--gray-600); display: inline-flex; align-items: center; gap: 5px; }

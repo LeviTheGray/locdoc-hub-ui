@@ -77,7 +77,7 @@ const STYLES = `
   ${TOKENS}
   :host { --amber:#f59e0b; --red:#ef4444; background:var(--gray-50); }
   .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; color:#6b7280; font:600 13px system-ui,-apple-system,sans-serif; padding:12px 16px 0; }
-  .header { background: var(--green); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
+  .header { background: var(--primary); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
   .header h1 { font-size: 18px; font-weight: 700; }
   .header p  { font-size: 12px; opacity: .75; margin-top: 2px; }
   .main { max-width: 720px; margin: 0 auto; padding: 28px 16px; }
@@ -109,8 +109,8 @@ const STYLES = `
   .photos-divider { border: none; border-top: 1px solid var(--gray-200); margin-top: 24px; padding-top: 4px; }
   .val-banner { display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; font-size: 13px; font-weight: 600; color: #b91c1c; margin-bottom: 20px; }
   .form-actions { display: flex; gap: 12px; }
-  .btn-primary { flex: 1; padding: 14px 20px; background: var(--green); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s, transform .1s; }
-  .btn-primary:hover { background: var(--green-dk); transform: translateY(-1px); }
+  .btn-primary { flex: 1; padding: 14px 20px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s, transform .1s; }
+  .btn-primary:hover { background: var(--primary-dk); transform: translateY(-1px); }
   .btn-primary:active { transform: scale(.98); }
   .btn-primary:disabled { background: var(--gray-200); color: var(--gray-400); cursor: default; transform: none; }
   .submitted-banner { background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }

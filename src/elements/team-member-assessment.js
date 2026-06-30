@@ -51,7 +51,7 @@ const STYLES = `
   ${TOKENS}
   :host { --red:#ef4444; background:var(--gray-50); }
   .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; color:#6b7280; font:600 13px system-ui,-apple-system,sans-serif; padding:12px 16px 0; }
-  .header { background: var(--green); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
+  .header { background: var(--primary); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
   .header h1 { font-size: 18px; font-weight: 700; }
   .header p  { font-size: 12px; opacity: .75; margin-top: 2px; }
   .main { max-width: 1100px; margin: 0 auto; padding: 28px 16px; }
@@ -66,24 +66,24 @@ const STYLES = `
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%236b7280'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center;
   }
-  .toolbar select:focus { outline: 2px solid var(--green); outline-offset: -1px; }
+  .toolbar select:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
   .count-pill { font-size: 12px; font-weight: 600; background: var(--gray-100); color: var(--gray-600); border-radius: 100px; padding: 3px 10px; }
   .emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
   .emp-card { background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius); padding: 18px; cursor: pointer; box-shadow: var(--shadow); transition: border-color .15s, box-shadow .15s, transform .12s; }
-  .emp-card:hover { border-color: var(--green); box-shadow: 0 0 0 4px rgba(21,128,61,.1), var(--shadow-md); transform: translateY(-2px); }
-  .emp-card:active { transform: scale(.98); border-color: var(--green); }
-  .emp-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #34d399, var(--green)); color: #fff; font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .emp-card:hover { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(79,100,152,.1), var(--shadow-md); transform: translateY(-2px); }
+  .emp-card:active { transform: scale(.98); border-color: var(--primary); }
+  .emp-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-lt), var(--primary)); color: #fff; font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
   .emp-name { font-size: 14px; font-weight: 700; line-height: 1.3; }
   .emp-dept { font-size: 12px; color: var(--gray-400); margin-top: 3px; }
-  .emp-btn { display: block; width: 100%; margin-top: 14px; padding: 8px 0; background: var(--green); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
-  .emp-btn:hover { background: var(--green-dk); }
+  .emp-btn { display: block; width: 100%; margin-top: 14px; padding: 8px 0; background: var(--primary); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
+  .emp-btn:hover { background: var(--primary-dk); }
   .no-results { text-align: center; padding: 64px 0; color: var(--gray-400); font-size: 15px; }
   .ext-badge { display: inline-block; margin-top: 6px; font-size: 10px; font-weight: 600; color: var(--gray-600); background: var(--gray-100); border: 1px solid var(--gray-200); border-radius: 100px; padding: 2px 8px; }
   .form-topbar { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
   .btn-back { padding: 8px 14px; border: 1px solid var(--gray-200); border-radius: 7px; background: #fff; font-size: 13px; color: var(--gray-600); cursor: pointer; white-space: nowrap; transition: all .15s; }
   .btn-back:hover { border-color: var(--gray-400); background: var(--gray-50); }
   .subject-block { display: flex; align-items: center; gap: 14px; flex: 1; }
-  .subject-avatar { width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(135deg, #34d399, var(--green)); color: #fff; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .subject-avatar { width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-lt), var(--primary)); color: #fff; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .subject-block h2 { font-size: 19px; font-weight: 700; }
   .subject-block p  { font-size: 13px; color: var(--gray-400); margin-top: 2px; }
   .form-card { background: #fff; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow); }
@@ -118,10 +118,10 @@ const STYLES = `
   .gen-feedback label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
   .gen-feedback .opt { font-size: 12px; color: var(--gray-400); font-weight: 400; }
   .gen-feedback textarea { width: 100%; border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 90px; }
-  .gen-feedback textarea:focus { outline: 2px solid var(--green); outline-offset: -1px; }
+  .gen-feedback textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
   .form-actions { display: flex; gap: 12px; padding-top: 24px; border-top: 1px solid var(--gray-200); margin-top: 24px; }
-  .btn-primary { flex: 1; padding: 12px 20px; background: var(--green); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s, transform .1s; }
-  .btn-primary:hover { background: var(--green-dk); transform: translateY(-1px); }
+  .btn-primary { flex: 1; padding: 12px 20px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s, transform .1s; }
+  .btn-primary:hover { background: var(--primary-dk); transform: translateY(-1px); }
   .btn-secondary { padding: 12px 20px; background: transparent; border: 1px solid var(--gray-200); border-radius: 8px; font-size: 14px; color: var(--gray-600); cursor: pointer; transition: all .15s; }
   .btn-secondary:hover { border-color: var(--gray-400); background: var(--gray-50); }
   .emp-card--done { opacity: .6; cursor: default; pointer-events: none; }

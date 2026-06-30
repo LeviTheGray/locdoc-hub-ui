@@ -41,7 +41,7 @@ const STYLES = `
   ${TOKENS}
   :host { --amber:#f59e0b; --red:#ef4444; background:var(--gray-50); }
   .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; color:#6b7280; font:600 13px system-ui,-apple-system,sans-serif; padding:12px 16px 0; }
-  .header { background: var(--green); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
+  .header { background: var(--primary); color: #fff; padding: 16px 24px; box-shadow: var(--shadow-md); }
   .header h1 { font-size: 18px; font-weight: 700; }
   .header p  { font-size: 12px; opacity: .75; margin-top: 2px; }
   .main { max-width: 920px; margin: 0 auto; padding: 28px 16px; }

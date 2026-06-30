@@ -25,7 +25,7 @@ const STYLES = `
   ${TOKENS}
   :host { background:var(--gray-50); }
   .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; color:#6b7280; font:600 13px system-ui,-apple-system,sans-serif; padding:12px 16px 0; }
-  .header { background:var(--green); color:#fff; padding:16px 24px; box-shadow:var(--shadow-md); }
+  .header { background:var(--primary); color:#fff; padding:16px 24px; box-shadow:var(--shadow-md); }
   .header h1 { font-size:18px; font-weight:700; }
   .header p { font-size:12px; opacity:.75; margin-top:2px; }
   .main { max-width:760px; margin:0 auto; padding:24px 16px; }
@@ -33,7 +33,7 @@ const STYLES = `
   .roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-bottom:24px; }
   .person { background:#fff; border:1px solid var(--gray-200); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; cursor:pointer; display:flex; align-items:center; gap:12px; transition:transform .12s,box-shadow .12s; -webkit-tap-highlight-color:transparent; text-align:left; width:100%; }
   .person:hover { transform:translateY(-2px); box-shadow:var(--shadow-md); }
-  .person.selected { border-color:var(--green); box-shadow:0 0 0 2px var(--green) inset; }
+  .person.selected { border-color:var(--primary); box-shadow:0 0 0 2px var(--primary) inset; }
   .avatar { width:40px; height:40px; border-radius:50%; background:var(--gray-200); color:var(--gray-600); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0; object-fit:cover; }
   .person-name { font-size:14px; font-weight:700; }
   .person-dept { font-size:12px; color:var(--gray-400); }
@@ -45,8 +45,8 @@ const STYLES = `
   .field label { display:block; font-size:13px; font-weight:600; color:var(--gray-600); margin-bottom:6px; }
   .field input, .field textarea { width:100%; padding:10px 12px; border:1px solid var(--gray-200); border-radius:8px; font-size:16px; font-family:inherit; color:var(--gray-900); background:#fff; }
   .field textarea { min-height:64px; resize:vertical; }
-  .field input:focus, .field textarea:focus { outline:2px solid var(--green); outline-offset:-1px; }
-  .save-btn { width:100%; background:var(--green); color:#fff; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:700; cursor:pointer; }
+  .field input:focus, .field textarea:focus { outline:2px solid var(--primary); outline-offset:-1px; }
+  .save-btn { width:100%; background:var(--primary); color:#fff; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:700; cursor:pointer; }
   .save-btn:disabled { opacity:.5; cursor:not-allowed; }
   .save-btn:active:not(:disabled) { transform:scale(.99); }
   .history-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-400); margin:18px 0 10px; }
