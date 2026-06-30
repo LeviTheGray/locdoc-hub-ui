@@ -15,30 +15,10 @@
  */
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
+import { CORE_VALUES, CORE_VALUES_CSS, valueCardHTML } from './core-values-data.js';
 
 const VISION = 'Transform the Southeast to a unified and systematized Security Solutions provider through engaging training programs, acquisitions and continued development of digital opening management systems.';
 const MISSION = 'We Help our Customers Protect Their People and Their Property.';
-
-// Core Values — "trait / principle" pairs (EOS wall model) with the definitions from
-// /core-values, revealed on hover/tap.
-const CORE_VALUES = [
-  { trait: 'Defined',     value: 'Expectations',   icon: 'crisis_alert',
-    desc: "Don't be frustrated with unmet expectations when YOU have not clearly set them. Can the customer or teammate execute the expectations without further explanation?" },
-  { trait: 'Consistent',  value: 'Communication',  icon: 'sync',
-    desc: "Always communicate clear and important information that will impact our customers and our team." },
-  { trait: 'Cultivate',   value: 'Trust',          icon: 'handshake',
-    desc: "Start small, have patience and be consistent. Consistency builds trust!" },
-  { trait: 'Outrageous',  value: 'Kindness',       icon: 'redeem',
-    desc: "Treat team members, customers and your family BETTER than you want to be treated." },
-  { trait: 'Courageous',  value: 'Honesty',        icon: 'visibility',
-    desc: "Handle the truth with courage early and often. Don't hide things, cover up or keep things from your teammates or customers." },
-  { trait: 'Refined',     value: 'Quality',        icon: 'workspace_premium',
-    desc: "Factory specifications are met, shortcuts are not taken. Quality over Quantity and customer satisfaction is primary." },
-  { trait: 'Unexpected',  value: 'Cleanliness',    icon: 'cleaning_services',
-    desc: "Jobsite, workspace, uniforms, tools, products, installations. Everything WE touch, should be left cleaner than when we started." },
-  { trait: 'Intentional', value: 'Execution',      icon: 'task_alt',
-    desc: "Define what winning looks like and don't give up until it's finished. Prior Planning Prevents Poor Performance." },
-];
 
 const CORE_FOCUS = {
   purpose: 'Develops individuals operating as unified teams through training and personal development resources.',
@@ -162,30 +142,7 @@ const STYLES = `
     color: var(--gray-400); padding-bottom: 12px; margin-bottom: 22px; border-bottom: 1px solid var(--gray-200);
   }
 
-  /* Core Values — seamless mosaic of tall centered tiles; tiles alternate white / light-green.
-     Refined Material Symbols line-art glyph on top, two-line UPPERCASE title, definition below. */
-  .values-grid {
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px;
-    background: var(--gray-200); border: 1.5px solid var(--gray-200);
-    border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
-  }
-  .value-card {
-    background: #fff; padding: 30px 22px 28px; text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 16px;
-  }
-  /* True 4-col checkerboard (period of 8): green tiles at positions 2,4,5,7. */
-  @media (min-width: 881px) {
-    .value-card:nth-child(8n+2), .value-card:nth-child(8n+4),
-    .value-card:nth-child(8n+5), .value-card:nth-child(8n+7) { background: var(--icon-chip-bg); }
-  }
-  .value-glyph.material-symbols-outlined {
-    font-size: 46px; color: var(--primary-dk);
-    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 48;
-  }
-  .value-title { display: flex; flex-direction: column; gap: 3px; }
-  .vt-trait { font-size: 12px; font-weight: 400; letter-spacing: .2em; text-transform: uppercase; color: var(--gray-600); }
-  .vt-name  { font-size: 18px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--gray-900); line-height: 1.1; }
-  .value-desc { font-size: 13.5px; line-height: 1.55; color: var(--gray-600); max-width: 26ch; }
+  ${CORE_VALUES_CSS}
 
   /* Generic content cards */
   .cards { display: grid; gap: 16px; }
@@ -226,19 +183,11 @@ const STYLES = `
 
   .note { font-size: 13px; color: var(--gray-600); font-style: italic; margin-top: 4px; }
 
-  /* 2-col checkerboard (period of 4): green at positions 2,3. */
-  @media (min-width: 601px) and (max-width: 880px) {
-    .values-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .value-card:nth-child(4n+2), .value-card:nth-child(4n+3) { background: var(--icon-chip-bg); }
-  }
   @media (max-width: 600px) {
     .header { padding: 12px 16px; }
     .hero { padding: 40px 16px; }
     .hero .vision { font-size: 21px; }
     .main { padding: 32px 12px 44px; }
-    .values-grid { grid-template-columns: 1fr; }
-    .value-card { background: #fff; }
-    .value-card:nth-child(even) { background: var(--icon-chip-bg); }
   }
 `;
 
@@ -251,18 +200,6 @@ class MissionVision extends HTMLElement {
   connectedCallback() {
     ensureMaterialSymbols();
     this._render();
-  }
-
-  _valueCard(v) {
-    return `
-      <div class="value-card">
-        <span class="value-glyph material-symbols-outlined">${v.icon}</span>
-        <div class="value-title">
-          <span class="vt-trait">${v.trait}</span>
-          <span class="vt-name">${v.value}</span>
-        </div>
-        <p class="value-desc">${v.desc}</p>
-      </div>`;
   }
 
   _picCard(p) {
@@ -313,7 +250,7 @@ class MissionVision extends HTMLElement {
       <main class="main">
         <section class="section">
           <div class="section-title">Core Values</div>
-          <div class="values-grid">${CORE_VALUES.map(v => this._valueCard(v)).join('')}</div>
+          <div class="values-grid">${CORE_VALUES.map(valueCardHTML).join('')}</div>
         </section>
 
         <section class="section">
