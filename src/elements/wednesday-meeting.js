@@ -108,8 +108,9 @@ const SAMPLE_DATA = {
         { url: '🔐', caption: 'Rebuilt, lubricated, and rekeyed to match.' },
       ] },
   ],
-  // Agenda tab embeds this week's presentation. { title: this week's topic, url: Google Slides link }
-  agendaSlide: { title: 'Q3 service goals kickoff', url: '' },
+  // Agenda tab embeds the next meeting's presentation, fed from WeeklyAgendas via page Velo.
+  // Empty by default so demo/unwired state never shows a fake topic. { title, url, date }
+  agendaSlide: { title: '', url: '', date: '' },
 };
 
 // ---- helpers ----
@@ -612,14 +613,19 @@ class WednesdayMeeting extends HTMLElement {
   // ---- Tab 5: Agenda (this week's presentation) ----
   _agendaPanel() {
     const a = this._data.agendaSlide || {};
-    const title = a.title || "This week's topic";
+    const hasTopic = !!(a.title && String(a.title).trim());
     const src = slidesEmbed(a.url);
+    const sub = hasTopic
+      ? `${esc(a.title)}${a.date ? ` · ${esc(fmtDate(a.date))}` : ''}`
+      : 'Set the next meeting’s topic and Google Slides link in the Weekly Agendas table.';
     return `
-      <div class="panel-title">Agenda</div>
-      <div class="panel-sub">${esc(title)}</div>
+      <div class="panel-title">Agenda — next meeting</div>
+      <div class="panel-sub">${sub}</div>
       ${src
         ? `<div class="slide-embed"><iframe src="${esc(src)}" allowfullscreen></iframe></div>`
-        : `<div class="card"><div class="placeholder">No presentation linked yet. Add this week's Google Slides link to show it here.${a.url ? ` <a class="slide-link" href="${esc(a.url)}" target="_blank" rel="noopener">Open link</a>` : ''}</div></div>`}`;
+        : `<div class="card"><div class="placeholder">${hasTopic
+            ? 'No presentation linked for this meeting yet.'
+            : 'No upcoming meeting found in Weekly Agendas.'} Add a Google Slides link to the meeting's row to show it here.${a.url ? ` <a class="slide-link" href="${esc(a.url)}" target="_blank" rel="noopener">Open link</a>` : ''}</div></div>`}`;
   }
 }
 
