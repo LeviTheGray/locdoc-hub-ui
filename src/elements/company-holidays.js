@@ -149,7 +149,7 @@ class CompanyHolidays extends HTMLElement {
     const btn = d.docUrl ? `<a class="doc-btn" href="${d.docUrl}" target="_blank" rel="noopener">View document <span class="material-symbols-outlined">open_in_new</span></a>` : '';
     return `
       <section class="doc">
-        <div class="section-title">${d.title ? this._esc(d.title) : 'Holiday Policy'}</div>
+        <div class="section-title">Which holidays are we off every year?</div>
         ${meta}${body}${btn}
       </section>`;
   }
@@ -161,10 +161,10 @@ class CompanyHolidays extends HTMLElement {
       <header class="header"><h1>Holidays</h1><p>LocDoc · Paid company holidays</p></header>
       <section class="hero">
         <h2>${year} Holiday Schedule</h2>
-        <p>When each holiday falls this year and the day the office is closed.</p>
+        <p>The specific days the office is closed this year, plus the holidays we observe every year.</p>
       </section>
       <main class="main">
-        <div class="section-title">${year} Schedule</div>
+        <div class="section-title">Which days are we off this year? (${year})</div>
         <div class="sched">
           <div class="row head"><div>Holiday</div><div>Date</div><div>Office closed</div></div>
           ${this._scheduleRows(year)}
