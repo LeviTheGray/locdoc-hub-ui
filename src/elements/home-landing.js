@@ -100,8 +100,8 @@ const DESTINATIONS = [
     btnText: 'Open Handbook' 
   },
   { 
-    key: 'nexus-hub', 
-    href: 'https://team.locdoc.net/nexus', // Placeholder - update with the real URL
+    key: 'nexus-hub',
+    href: 'https://hub-nexus.locdoc.net',
     icon: 'support_agent',
     name: 'Nexus Hub',
     desc: 'Submit IT support tickets and track lab project management.',
