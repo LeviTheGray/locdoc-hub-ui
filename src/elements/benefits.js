@@ -16,11 +16,12 @@
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
 // Each benefit → where it lives. In-site links (open same tab). `note` optional small tag.
+// Deep-links use the Google Doc ID (stable; matched by the hub against the resource's driveUrl).
 const BENEFITS = [
-  { name: 'Healthcare',     desc: 'Medical, dental and vision plans and coverage details.', icon: 'local_hospital', href: '/resources?doc=Healthcare' },
-  { name: 'Retirement',     desc: '401(k) and retirement savings information.',              icon: 'savings',        href: '/resources?doc=Retirement' },
+  { name: 'Healthcare',     desc: 'Medical, dental and vision plans and coverage details.', icon: 'local_hospital', href: '/resources?doc=1ARg2RIM27-R8p6G7pbjet3QHq7QnxdtloZaC98cavWg' },
+  { name: 'Retirement',     desc: '401(k) and retirement savings information.',              icon: 'savings',        href: '/resources?doc=1iR9d_psRstyHrFp1Sn2XePg9SfcVVvT0ExMd4SoNxB0' },
   { name: 'Holidays',       desc: 'Paid company holidays and this year’s schedule.',         icon: 'calendar_month', href: '/holidays' },
-  { name: 'Paid Time Off',  desc: 'PTO accrual, how to request, and approvals.',             icon: 'beach_access',   href: '/resources?doc=Paid%20Time%20Off' },
+  { name: 'Paid Time Off',  desc: 'PTO accrual, how to request, and approvals.',             icon: 'beach_access',   href: '/resources?doc=1de6wfi2a7Bf9lqxKN3H9OfcDU8lUgX7PmkwbbcmpuuE' },
 ];
 
 const STYLES = `
