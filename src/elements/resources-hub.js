@@ -1,54 +1,53 @@
 /**
  * Wix Custom Element — Resources Hub  (<resources-hub>)
  *
- * A styled, navigable front door to the company's SOPs / policies / forms. Discussion and the
- * actual posts still live in the Wix Groups app (/groups) — this hub does NOT query Groups; it
- * organizes curated links into the right Group/topic (or a document) by category + department,
- * with client-side search, so people can find things. Replaces the old hard-to-use forum landing.
+ * A styled front door to the company's SOPs / policies / processes / tutorials. Content is managed
+ * in the Wix CMS collection `ProcessPoliciesTutorials` (populated by an n8n automation that watches
+ * a Google Drive folder of Google Docs). This element renders that collection as a searchable,
+ * category-filterable library, with an in-site READER view (title + body + a "View document"
+ * button) so people stay on the portal instead of bouncing straight to Google Docs.
  *
  * Lives on the /resources page (Resources.lhdsf) and syncs through the Wix Git integration.
  *
- * Data handoff (mirrors home-landing):
- *   • Velo → element :  setAttribute('init-data', JSON.stringify({ currentUser }))  (optional —
- *                       used only to pre-select the department filter to the viewer's department)
- *   • element → Velo :  dispatches 'navigate' { detail: { path } } for IN-SITE links; external
- *                       links (Groups URLs, docs) open in a new tab from inside the element.
+ * Data handoff:
+ *   • Velo → element :  setAttribute('init-data', JSON.stringify({ resources: [ … ] }))
+ *       resources[] item shape (mapped from the collection by the page code):
+ *         { id, title, desc, category, body, docUrl, updated }
+ *       - desc   : short summary for the card (optional)
+ *       - body   : rich-text/HTML shown in the reader (optional; falls back to desc)
+ *       - docUrl : link to the Google Doc (optional; drives the "View document" button)
+ *       - updated: ISO date string (optional; shown as "Updated …")
+ *   • element → Velo :  none (external doc links open in a new tab from inside the element).
+ *
+ * Categories are derived from the data, so they track whatever the collection contains.
+ * If no `resources` are provided, the PLACEHOLDER list below renders so the layout is previewable.
  *
  * Editor setup (one time): Add → Embed Code → Custom Element → choose this file, set the tag name
  * to `resources-hub`, give the element the ID `resourcesHub`, and set the page to Members-Only.
- *
- * ─────────────────────────────────────────────────────────────────────────────────────────────
- * TO POPULATE: replace the PLACEHOLDER entries in RESOURCES below with real items — each needs a
- * title, desc, category, department, and EITHER `href` (a Groups/topic or document URL, opens in a
- * new tab) OR `path` (an in-site route like '/groups/<slug>', navigates in place). Adjust
- * CATEGORIES / DEPARTMENTS to match. (Future option: move RESOURCES to a Wix CMS collection so it
- * can be edited without code — not wired yet.)
- * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
-// Filter taxonomies. 'All' is injected by the UI; list the real values here.
-const CATEGORIES = ['SOP', 'Policy', 'Policy Update', 'Form', 'Guide'];
-const DEPARTMENTS = ['Operations', 'Sales', 'Lab', 'Admin'];
-
-// Material Symbols glyph per category (line-art, tinted with --icon).
+// Material Symbols glyph per category (line-art, tinted with --icon). Unknown categories use the
+// default. Keys are lowercased for lookup.
 const CATEGORY_ICON = {
-  'SOP': 'description',
-  'Policy': 'gavel',
-  'Policy Update': 'campaign',
-  'Form': 'edit_document',
-  'Guide': 'menu_book',
+  'sop': 'description',
+  'policy': 'gavel',
+  'policy update': 'campaign',
+  'process': 'account_tree',
+  'tutorial': 'school',
+  'form': 'edit_document',
+  'guide': 'menu_book',
 };
+const DEFAULT_ICON = 'description';
 
-// ⚠️ PLACEHOLDER DATA — replace with the real resources/links (see header note).
-const RESOURCES = [
-  { title: 'Service SOP — Lock Rekey', desc: 'Step-by-step standard procedure for rekeying on a service call.', category: 'SOP', department: 'Operations', path: '/groups' },
-  { title: 'PTO & Time-Off Policy', desc: 'How to request time off, accrual rules, and blackout periods.', category: 'Policy', department: 'Admin', path: '/groups' },
-  { title: 'New Uniform Policy (2025)', desc: 'Updated uniform standards effective this year — please review.', category: 'Policy Update', department: 'Operations', path: '/groups' },
-  { title: 'Incident Report Form', desc: 'Submit a workplace incident or safety report.', category: 'Form', department: 'Operations', href: 'https://team.locdoc.net/groups' },
-  { title: 'Sales Quote Builder Guide', desc: 'How to build and send a customer quote in OMS.', category: 'Guide', department: 'Sales', path: '/groups' },
-  { title: 'Lab Intake SOP', desc: 'Receiving, logging, and routing lab project work.', category: 'SOP', department: 'Lab', path: '/groups' },
+// ⚠️ PLACEHOLDER DATA — only used until the page passes live `resources` via init-data.
+const PLACEHOLDER = [
+  { id: 'p1', title: 'Service SOP — Lock Rekey', category: 'SOP', desc: 'Standard procedure for rekeying on a service call.', body: '<p>Placeholder body. Live content comes from the ProcessPoliciesTutorials collection.</p>', docUrl: 'https://docs.google.com/', updated: '2026-06-01' },
+  { id: 'p2', title: 'PTO & Time-Off Policy', category: 'Policy', desc: 'How to request time off, accrual rules, and blackout periods.', body: '', docUrl: 'https://docs.google.com/', updated: '2026-05-12' },
+  { id: 'p3', title: 'New Uniform Policy (2025)', category: 'Policy Update', desc: 'Updated uniform standards — please review.', body: '', docUrl: 'https://docs.google.com/', updated: '2026-04-20' },
+  { id: 'p4', title: 'Onboarding a New Tech', category: 'Process', desc: 'End-to-end process for bringing a new technician online.', body: '', docUrl: 'https://docs.google.com/', updated: '2026-03-30' },
+  { id: 'p5', title: 'Building a Quote in OMS', category: 'Tutorial', desc: 'Walkthrough of creating and sending a customer quote.', body: '', docUrl: 'https://docs.google.com/', updated: '2026-06-18' },
 ];
 
 const STYLES = `
@@ -65,8 +64,8 @@ const STYLES = `
 
   .main { max-width: 1000px; margin: 0 auto; padding: 32px 16px 56px; }
 
-  /* Toolbar: search + category chips + department select */
-  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 8px; }
+  /* Toolbar: search + category chips */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
   .search { position: relative; flex: 1 1 240px; min-width: 200px; }
   .search .material-symbols-outlined { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--gray-400); font-size: 20px; pointer-events: none; }
   .search input {
@@ -74,11 +73,6 @@ const STYLES = `
     font: inherit; font-size: 14px; background: #fff; color: var(--gray-900); outline: none;
   }
   .search input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb),.12); }
-  .dept-select {
-    padding: 10px 12px; border: 1.5px solid var(--gray-200); border-radius: var(--radius);
-    font: inherit; font-size: 14px; background: #fff; color: var(--gray-900); cursor: pointer; min-width: 160px;
-  }
-  .dept-select:focus { border-color: var(--primary); outline: none; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 22px; }
   .chip {
@@ -93,7 +87,7 @@ const STYLES = `
 
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
   .res-card {
-    position: relative; background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius);
+    background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius);
     box-shadow: var(--shadow); padding: 18px; cursor: pointer; text-align: left;
     display: flex; flex-direction: column; gap: 10px;
     transition: border-color .15s, box-shadow .15s, transform .12s; -webkit-tap-highlight-color: transparent;
@@ -107,11 +101,39 @@ const STYLES = `
   .res-title { font-size: 15px; font-weight: 700; color: var(--gray-900); line-height: 1.3; }
   .res-desc { font-size: 13.5px; line-height: 1.5; color: var(--gray-600); }
   .res-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
-  .res-dept { font-size: 12px; color: var(--gray-400); }
+  .res-updated { font-size: 12px; color: var(--gray-400); }
   .res-open { font-size: 12px; font-weight: 700; color: var(--primary); display: inline-flex; align-items: center; gap: 4px; }
   .res-open .material-symbols-outlined { font-size: 16px; }
 
   .empty { text-align: center; color: var(--gray-400); padding: 48px 0; font-size: 15px; }
+
+  /* Reader (in-site detail view) */
+  .reader { max-width: 760px; margin: 0 auto; }
+  .back {
+    display: inline-flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer;
+    color: var(--primary); font: inherit; font-size: 14px; font-weight: 600; padding: 4px 0; margin-bottom: 18px;
+  }
+  .back .material-symbols-outlined { font-size: 20px; }
+  .reader-cat { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--primary-dk); }
+  .reader h2 { font-size: 26px; font-weight: 800; line-height: 1.25; margin: 8px 0; color: var(--gray-900); }
+  .reader-meta { font-size: 13px; color: var(--gray-400); margin-bottom: 20px; }
+  .reader-body {
+    background: #fff; border: 1.5px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 26px; font-size: 15px; line-height: 1.65; color: var(--gray-900);
+  }
+  .reader-body p { margin: 0 0 12px; } .reader-body p:last-child { margin-bottom: 0; }
+  .reader-body h1, .reader-body h2, .reader-body h3 { margin: 18px 0 8px; line-height: 1.3; }
+  .reader-body ul, .reader-body ol { margin: 0 0 12px 22px; } .reader-body li { margin: 4px 0; }
+  .reader-body a { color: var(--primary); }
+  .reader-none { color: var(--gray-400); font-style: italic; }
+  .doc-btn {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 22px;
+    background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm);
+    padding: 11px 20px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none;
+    transition: background .15s, transform .08s;
+  }
+  .doc-btn:hover { background: var(--primary-dk); } .doc-btn:active { transform: scale(.98); }
+  .doc-btn .material-symbols-outlined { font-size: 18px; }
 
   @media (max-width: 600px) {
     .header { padding: 12px 16px; }
@@ -119,6 +141,7 @@ const STYLES = `
     .hero h2 { font-size: 23px; }
     .main { padding: 24px 12px 44px; }
     .cards { grid-template-columns: 1fr; }
+    .reader-body { padding: 20px; }
   }
 `;
 
@@ -128,9 +151,11 @@ class ResourcesHub extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
+    this._resources = PLACEHOLDER;
     this._q = '';
     this._category = 'All';
-    this._department = 'All';
+    this._view = 'list';
+    this._activeId = null;
   }
 
   connectedCallback() {
@@ -146,119 +171,171 @@ class ResourcesHub extends HTMLElement {
   _applyData(json) {
     let parsed = {};
     try { parsed = JSON.parse(json) || {}; } catch (e) { parsed = {}; }
-    const dept = parsed.currentUser && parsed.currentUser.department;
-    // Pre-select the viewer's department if it's one we filter on.
-    if (dept && DEPARTMENTS.includes(dept)) {
-      this._department = dept;
-      const sel = this.shadowRoot.querySelector('.dept-select');
-      if (sel) sel.value = dept;
+    if (Array.isArray(parsed.resources) && parsed.resources.length) {
+      this._resources = parsed.resources;
     }
-    this._renderCards();
+    this._category = 'All';
+    this._renderChips();
+    this._renderList();
+  }
+
+  _categories() {
+    const seen = [];
+    for (const r of this._resources) {
+      const c = (r.category || '').trim();
+      if (c && !seen.includes(c)) seen.push(c);
+    }
+    seen.sort((a, b) => a.localeCompare(b));
+    return seen;
   }
 
   _renderShell() {
     if (this._shell) return;
     this._shell = true;
-    const chips = ['All', ...CATEGORIES]
-      .map(c => `<button class="chip${c === this._category ? ' active' : ''}" data-cat="${c}">${c}</button>`)
-      .join('');
-    const deptOpts = ['All', ...DEPARTMENTS]
-      .map(d => `<option value="${d}">${d === 'All' ? 'All departments' : d}</option>`).join('');
-
     this.shadowRoot.innerHTML = `
       <style>${STYLES}</style>
-      <header class="header"><h1>Resources</h1><p>SOPs · Policies · Forms · Guides</p></header>
+      <header class="header"><h1>Resources</h1><p>SOPs · Policies · Processes · Tutorials</p></header>
       <section class="hero">
         <h2>Find what you need</h2>
-        <p>Search and filter company SOPs, policies and forms. Open a resource to read or discuss it in Groups.</p>
+        <p>Search and filter company processes, policies and tutorials. Open one to read it here or jump to the source document.</p>
       </section>
-      <main class="main">
-        <div class="toolbar">
-          <label class="search">
-            <span class="material-symbols-outlined">search</span>
-            <input type="search" placeholder="Search resources…" data-search aria-label="Search resources">
-          </label>
-          <select class="dept-select" data-dept aria-label="Filter by department">${deptOpts}</select>
-        </div>
-        <div class="chips" data-chips>${chips}</div>
-        <div class="count" data-count></div>
-        <div class="cards" data-cards></div>
-      </main>`;
+      <main class="main" data-main></main>`;
+    this._renderList();
+  }
 
-    const root = this.shadowRoot;
-    root.querySelector('[data-search]').addEventListener('input', (e) => {
+  // ---- List view ----
+  _renderList() {
+    const main = this.shadowRoot.querySelector('[data-main]');
+    main.innerHTML = `
+      <div class="toolbar">
+        <label class="search">
+          <span class="material-symbols-outlined">search</span>
+          <input type="search" placeholder="Search resources…" data-search aria-label="Search resources" value="${this._escAttr(this._q)}">
+        </label>
+      </div>
+      <div class="chips" data-chips></div>
+      <div class="count" data-count></div>
+      <div class="cards" data-cards></div>`;
+
+    main.querySelector('[data-search]').addEventListener('input', (e) => {
       this._q = e.target.value.trim().toLowerCase();
       this._renderCards();
     });
-    root.querySelector('[data-dept]').addEventListener('change', (e) => {
-      this._department = e.target.value;
-      this._renderCards();
-    });
-    root.querySelector('[data-chips]').addEventListener('click', (e) => {
+    main.querySelector('[data-chips]').addEventListener('click', (e) => {
       const chip = e.target.closest('[data-cat]');
       if (!chip) return;
       this._category = chip.getAttribute('data-cat');
-      root.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
+      this._renderChips();
       this._renderCards();
     });
-    root.querySelector('[data-cards]').addEventListener('click', (e) => {
-      const card = e.target.closest('[data-idx]');
-      if (card) this._open(RESOURCES[Number(card.getAttribute('data-idx'))]);
+    main.querySelector('[data-cards]').addEventListener('click', (e) => {
+      const card = e.target.closest('[data-id]');
+      if (card) this._openReader(card.getAttribute('data-id'));
     });
 
+    this._renderChips();
     this._renderCards();
+  }
+
+  _renderChips() {
+    const box = this.shadowRoot.querySelector('[data-chips]');
+    if (!box) return;
+    const cats = ['All', ...this._categories()];
+    box.innerHTML = cats
+      .map(c => `<button class="chip${c === this._category ? ' active' : ''}" data-cat="${this._escAttr(c)}">${c}</button>`)
+      .join('');
   }
 
   _matches(r) {
     if (this._category !== 'All' && r.category !== this._category) return false;
-    if (this._department !== 'All' && r.department !== this._department) return false;
     if (this._q) {
-      const hay = `${r.title} ${r.desc} ${r.category} ${r.department}`.toLowerCase();
+      const hay = `${r.title || ''} ${r.desc || ''} ${r.category || ''}`.toLowerCase();
       if (!hay.includes(this._q)) return false;
     }
     return true;
   }
 
-  _card(r, idx) {
-    const icon = CATEGORY_ICON[r.category] || 'description';
-    const ext = r.href ? 'open_in_new' : 'chevron_right';
-    return `
-      <div class="res-card" data-idx="${idx}">
-        <div class="res-top">
-          <div class="res-icon"><span class="material-symbols-outlined">${icon}</span></div>
-          <div class="res-cat">${r.category}</div>
-        </div>
-        <div class="res-title">${r.title}</div>
-        <div class="res-desc">${r.desc}</div>
-        <div class="res-foot">
-          <span class="res-dept">${r.department}</span>
-          <span class="res-open">Open <span class="material-symbols-outlined">${ext}</span></span>
-        </div>
-      </div>`;
-  }
-
   _renderCards() {
     const root = this.shadowRoot;
-    const matched = RESOURCES.map((r, i) => [r, i]).filter(([r]) => this._matches(r));
     const cards = root.querySelector('[data-cards]');
     const count = root.querySelector('[data-count]');
+    if (!cards) return;
+    const matched = this._resources.filter(r => this._matches(r));
     if (!matched.length) {
-      cards.innerHTML = '';
       count.textContent = '';
       cards.innerHTML = '<div class="empty">No resources match your filters.</div>';
       return;
     }
     count.textContent = `${matched.length} resource${matched.length === 1 ? '' : 's'}`;
-    cards.innerHTML = matched.map(([r, i]) => this._card(r, i)).join('');
+    cards.innerHTML = matched.map(r => this._card(r)).join('');
   }
 
-  _open(r) {
-    if (!r) return;
-    if (r.href) {
-      window.open(r.href, '_blank', 'noopener');
-    } else if (r.path) {
-      this.dispatchEvent(new CustomEvent('navigate', { detail: { path: r.path }, bubbles: true, composed: true }));
-    }
+  _card(r) {
+    const icon = CATEGORY_ICON[(r.category || '').toLowerCase()] || DEFAULT_ICON;
+    const updated = this._fmtDate(r.updated);
+    return `
+      <div class="res-card" data-id="${this._escAttr(r.id)}">
+        <div class="res-top">
+          <div class="res-icon"><span class="material-symbols-outlined">${icon}</span></div>
+          <div class="res-cat">${this._esc(r.category || 'Resource')}</div>
+        </div>
+        <div class="res-title">${this._esc(r.title || 'Untitled')}</div>
+        ${r.desc ? `<div class="res-desc">${this._esc(r.desc)}</div>` : ''}
+        <div class="res-foot">
+          <span class="res-updated">${updated ? 'Updated ' + updated : ''}</span>
+          <span class="res-open">Read <span class="material-symbols-outlined">chevron_right</span></span>
+        </div>
+      </div>`;
+  }
+
+  // ---- Reader view ----
+  _openReader(id) {
+    this._activeId = id;
+    this._view = 'detail';
+    this._renderReader();
+    this.shadowRoot.querySelector('[data-main]').scrollIntoView({ block: 'start' });
+  }
+
+  _renderReader() {
+    const r = this._resources.find(x => String(x.id) === String(this._activeId));
+    const main = this.shadowRoot.querySelector('[data-main]');
+    if (!r) { this._view = 'list'; this._renderList(); return; }
+    const updated = this._fmtDate(r.updated);
+    const bodyHtml = r.body
+      ? `<div class="reader-body">${r.body}</div>`
+      : (r.desc ? `<div class="reader-body">${this._esc(r.desc)}</div>`
+                : `<div class="reader-body reader-none">No preview available — open the document to read it.</div>`);
+    const docBtn = r.docUrl
+      ? `<a class="doc-btn" href="${this._escAttr(r.docUrl)}" target="_blank" rel="noopener">View document <span class="material-symbols-outlined">open_in_new</span></a>`
+      : '';
+    main.innerHTML = `
+      <div class="reader">
+        <button class="back" data-back><span class="material-symbols-outlined">arrow_back</span> All resources</button>
+        <div class="reader-cat">${this._esc(r.category || 'Resource')}</div>
+        <h2>${this._esc(r.title || 'Untitled')}</h2>
+        <div class="reader-meta">${updated ? 'Updated ' + updated : ''}</div>
+        ${bodyHtml}
+        ${docBtn}
+      </div>`;
+    main.querySelector('[data-back]').addEventListener('click', () => {
+      this._view = 'list';
+      this._renderList();
+    });
+  }
+
+  // ---- helpers ----
+  _fmtDate(v) {
+    if (!v) return '';
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  _escAttr(s) {
+    return this._esc(s).replace(/"/g, '&quot;');
   }
 }
 
