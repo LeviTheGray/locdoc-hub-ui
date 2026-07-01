@@ -114,6 +114,7 @@ const STYLES = `
     color: var(--primary); font: inherit; font-size: 14px; font-weight: 600; padding: 4px 0; margin-bottom: 18px;
   }
   .back .material-symbols-outlined { font-size: 20px; }
+  .reader-img { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: var(--radius); border: 1.5px solid var(--gray-200); box-shadow: var(--shadow); margin-bottom: 18px; }
   .reader-cat { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--primary-dk); }
   .reader h2 { font-size: 26px; font-weight: 800; line-height: 1.25; margin: 8px 0; color: var(--gray-900); }
   .reader-meta { font-size: 13px; color: var(--gray-400); margin-bottom: 20px; }
@@ -301,6 +302,10 @@ class ResourcesHub extends HTMLElement {
     const main = this.shadowRoot.querySelector('[data-main]');
     if (!r) { this._view = 'list'; this._renderList(); return; }
     const updated = this._fmtDate(r.updated);
+    const effective = this._fmtDate(r.effectiveDate);
+    const meta = [effective ? 'Effective ' + effective : '', updated ? 'Updated ' + updated : '']
+      .filter(Boolean).join(' · ');
+    const img = r.image ? `<img class="reader-img" src="${this._escAttr(r.image)}" alt="" loading="lazy">` : '';
     const bodyHtml = r.body
       ? `<div class="reader-body">${r.body}</div>`
       : (r.desc ? `<div class="reader-body">${this._esc(r.desc)}</div>`
@@ -311,9 +316,10 @@ class ResourcesHub extends HTMLElement {
     main.innerHTML = `
       <div class="reader">
         <button class="back" data-back><span class="material-symbols-outlined">arrow_back</span> All resources</button>
+        ${img}
         <div class="reader-cat">${this._esc(r.category || 'Resource')}</div>
         <h2>${this._esc(r.title || 'Untitled')}</h2>
-        <div class="reader-meta">${updated ? 'Updated ' + updated : ''}</div>
+        <div class="reader-meta">${meta}</div>
         ${bodyHtml}
         ${docBtn}
       </div>`;
