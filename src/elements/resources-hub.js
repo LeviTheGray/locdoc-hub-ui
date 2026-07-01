@@ -157,12 +157,21 @@ class ResourcesHub extends HTMLElement {
     this._category = 'All';
     this._view = 'list';
     this._activeId = null;
+    this._deepDoc = null; // pending ?doc= deep-link to open once data arrives
   }
 
   connectedCallback() {
     ensureMaterialSymbols();
+    // Deep-link support: /resources?doc=<title|id> opens that resource's reader; ?q=<term> pre-fills search.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      this._deepDoc = params.get('doc');
+      const q = params.get('q');
+      if (q) this._q = q.trim().toLowerCase();
+    } catch (e) { /* no-op */ }
     this._renderShell();
     if (this.hasAttribute('init-data')) this._applyData(this.getAttribute('init-data'));
+    else this._maybeOpenDeepLink(); // allow deep-link against placeholder data too
   }
 
   attributeChangedCallback(name, _old, value) {
@@ -178,6 +187,21 @@ class ResourcesHub extends HTMLElement {
     this._category = 'All';
     this._renderChips();
     this._renderList();
+    this._maybeOpenDeepLink();
+  }
+
+  // If the URL carried ?doc=<value>, open the matching resource once (by id, googleDocId, or a
+  // case-insensitive title match). Cleared after opening so the Back button returns to the list.
+  _maybeOpenDeepLink() {
+    if (!this._deepDoc) return;
+    const v = String(this._deepDoc).trim().toLowerCase();
+    const hit = this._resources.find(r =>
+      String(r.id).toLowerCase() === v ||
+      (r.googleDocId && String(r.googleDocId).toLowerCase() === v) ||
+      (r.title && r.title.toLowerCase().includes(v))
+    );
+    this._deepDoc = null;
+    if (hit) this._openReader(hit.id);
   }
 
   _categories() {

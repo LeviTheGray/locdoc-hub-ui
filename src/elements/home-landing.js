@@ -52,8 +52,8 @@ const DESTINATIONS = [
     btnText: 'Open OMS' 
   },
   { 
-    key: 'profit-sharing', 
-    href: 'https://team.locdoc.net/profitsharing', 
+    key: 'profit-sharing',
+    href: 'https://team.locdoc.net/resources?doc=Profit%20Sharing',
     icon: 'payments',
     name: 'Profit Sharing',
     desc: 'Information and updates regarding the employee profit sharing program.',
