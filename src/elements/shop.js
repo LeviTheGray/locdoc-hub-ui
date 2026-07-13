@@ -509,11 +509,17 @@ class LocDocShop extends HTMLElement {
       </div>
       ${this._orders.length ? `<div class="card">
         <h2>My active orders</h2>
-        ${this._orders.map((o) => `
+        ${this._orders.map((o) => {
+          // A custom (SanMar/Amazon) order is charged at the member's ESTIMATE until an admin
+          // confirms the real price, so say so rather than showing it as a settled amount.
+          const pending = o.pricingConfirmed === false || o.status === 'Pending Pricing';
+          return `
           <div class="ord">
             <div class="h"><b>${this._esc(o.orderNumber || 'Order')}</b><span class="st">${this._esc(o.status || '')}</span></div>
-            <div class="m">${this._fmtDate(o.dateOrdered)} · ${Number(o.totalPoints) || 0} pts</div>
-          </div>`).join('')}
+            <div class="m">${this._fmtDate(o.dateOrdered)} · ${Number(o.totalPoints) || 0} pts${pending ? ' (estimated)' : ''}</div>
+            ${pending ? '<div class="m">Awaiting price confirmation — your points will be adjusted if the final price differs.</div>' : ''}
+          </div>`;
+        }).join('')}
       </div>` : ''}`;
 
     const submit = side.querySelector('[data-submit]');

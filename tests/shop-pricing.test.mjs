@@ -6,7 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  cartTotal, hasLogoCharge, hatPlacementFee, parseMoney, pointsForCart,
+  STATUS, cartTotal, hasLogoCharge, hatPlacementFee, isMemberVisibleStatus,
+  needsPricingConfirmation, parseMoney, pointsForCart,
   priceLine, priceSanmarLine, validateLine,
 } from '../src/elements/shop-pricing.js';
 
@@ -110,4 +111,44 @@ test('validation order and messages match the current SanMar shop', () => {
 test('amazon link must be http(s)', () => {
   assert.equal(validateLine({ source: 'amazon', link: 'ftp://x', price: 1, quantity: 1 }), 'Enter a valid http(s) link.');
   assert.equal(validateLine({ source: 'amazon', link: 'https://a.co/x', price: 1, quantity: 1 }), null);
+});
+
+// --- status contract -------------------------------------------------------
+// n8n automations trigger off these exact strings, and a status missing from the member-visible
+// list makes an order silently DISAPPEAR from the member's page. Both are pinned here on purpose.
+
+test('every workflow status stays visible to the member; only Cancelled/Archived hide', () => {
+  for (const s of [
+    STATUS.PENDING_PRICING, STATUS.READY_TO_ORDER, STATUS.ORDERED,
+    STATUS.PARTIALLY_RECEIVED, STATUS.RECEIVED,
+  ]) {
+    assert.equal(isMemberVisibleStatus(s), true, `${s} must remain visible to the member`);
+  }
+  assert.equal(isMemberVisibleStatus(STATUS.CANCELLED), false);
+  assert.equal(isMemberVisibleStatus(STATUS.ARCHIVED), false);
+
+  // Legacy rows created before this workflow existed.
+  assert.equal(isMemberVisibleStatus('Not Ordered'), true);
+  assert.equal(isMemberVisibleStatus('not ordered'), true);
+
+  // An unknown status hides the order — which is exactly why SETTABLE in shopAdmin.web.js
+  // rejects anything not on the list.
+  assert.equal(isMemberVisibleStatus('Shipped'), false);
+  assert.equal(isMemberVisibleStatus(''), false);
+});
+
+test('status strings are exactly what the automations expect', () => {
+  assert.equal(STATUS.PENDING_PRICING, 'Pending Pricing');
+  assert.equal(STATUS.READY_TO_ORDER, 'Ready to Order');
+  assert.equal(STATUS.ORDERED, 'Ordered'); // the vendor-email trigger
+  assert.equal(STATUS.PARTIALLY_RECEIVED, 'Partially Received');
+  assert.equal(STATUS.RECEIVED, 'Received');
+  assert.equal(STATUS.CANCELLED, 'Cancelled');
+  assert.equal(STATUS.ARCHIVED, 'Archived');
+});
+
+test('only custom items need an admin to confirm pricing', () => {
+  assert.equal(needsPricingConfirmation('sanmar'), true);
+  assert.equal(needsPricingConfirmation('amazon'), true);
+  assert.equal(needsPricingConfirmation('uniform'), false, 'catalog price is already established');
 });

@@ -20,6 +20,55 @@
  *   • "No logo" means empty, or one of NONE_LOGO_VALUES, or anything starting with "select ".
  */
 
+/**
+ * ORDER STATUSES — the single source of truth. n8n automations key off these exact strings, so
+ * they are hard to change once live. Treat them as a contract.
+ *
+ * Flow:
+ *   Pending Pricing  → custom (SanMar/Amazon) items whose typed price the admin hasn't confirmed.
+ *                      The ESTIMATE has already been deducted at submit.
+ *   Ready to Order   → pricing confirmed and the points difference settled. Uniform items land
+ *                      here directly: the catalog price is already established.
+ *   Ordered          → sent to the vendor. THIS IS THE AUTOMATION TRIGGER.
+ *   Partially Received / Received → fulfilment.
+ *   Cancelled        → admin killed it; points are refunded in full.
+ *   Archived         → off the board (terminal, pre-existing).
+ */
+export const STATUS = {
+  PENDING_PRICING: 'Pending Pricing',
+  READY_TO_ORDER: 'Ready to Order',
+  ORDERED: 'Ordered',
+  PARTIALLY_RECEIVED: 'Partially Received',
+  RECEIVED: 'Received',
+  CANCELLED: 'Cancelled',
+  ARCHIVED: 'Archived',
+};
+
+/**
+ * Statuses a member can see on their own orders. Anything NOT in this list vanishes from the
+ * member's page with no error — which is exactly how the old shop lost orders whenever someone
+ * added a status option in the editor. Add a status here the moment you add it above.
+ *
+ * 'Not Ordered' is retained: it's the legacy initial status on every existing row.
+ */
+const MEMBER_VISIBLE = [
+  'not ordered',
+  STATUS.PENDING_PRICING,
+  STATUS.READY_TO_ORDER,
+  STATUS.ORDERED,
+  STATUS.PARTIALLY_RECEIVED,
+  STATUS.RECEIVED,
+].map((s) => s.toLowerCase());
+
+export function isMemberVisibleStatus(status) {
+  return MEMBER_VISIBLE.includes(String(status == null ? '' : status).trim().toLowerCase());
+}
+
+/** Custom items need an admin to confirm the price; catalog items are already priced. */
+export function needsPricingConfirmation(source) {
+  return source === 'sanmar' || source === 'amazon';
+}
+
 /** Shirt / jacket logo add-on per garment (not hats). */
 export const GARMENT_LOGO_FEE_PER_UNIT = 3;
 
