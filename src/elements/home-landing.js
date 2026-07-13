@@ -21,8 +21,13 @@
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
-// Internal destinations (handled by Velo via the 'navigate' event) must list their key here.
-const INTERNAL_KEYS = ['hub', 'parts-spotlight', 'profit-sharing', 'policies'];
+// Internal destinations (handled by Velo via the 'navigate' event) must list their key here, and
+// each key needs a matching path in PAGE_PATHS in Home.c1dmp.js — an internal tile with no route
+// is a dead button. Only genuinely off-site tools (OMS, Drive, Nexus/Lab Hub) keep an `href`.
+const INTERNAL_KEYS = [
+  'hub', 'parts-spotlight', 'profit-sharing', 'policies',
+  'meetings', 'benefits', 'events', 'mission-vision',
+];
 
 // Google Calendar embed. Paste the `src` URL from Google Calendar →
 // Settings → [calendar] → Integrate calendar → "Embed code" (use the URL inside src="…").
@@ -35,13 +40,13 @@ const CALENDAR_EMBED_SRC = 'https://calendar.google.com/calendar/embed?height=30
 // NOTE: the external-tools cards below are PLACEHOLDERS — replace name/desc/href (and icon)
 // with the real tools/OMS links. Add or remove entries freely.
 const DESTINATIONS = [
-  { 
+  {
     key: 'meetings',
-    href: 'https://team.locdoc.net/meetings',
+    internal: true, // in-site: /meetings
     icon: 'calendar_month',
     name: 'Weekly Meetings',
     desc: 'Weekly Meeting Links',
-    btnText: 'Go to Meetings' 
+    btnText: 'Go to Meetings'
   },
   { 
     key: 'oms', 
@@ -59,29 +64,29 @@ const DESTINATIONS = [
     desc: 'Information and updates regarding the employee profit sharing program.',
     btnText: 'View Profit Sharing'
   },
-  { 
-    key: 'benefits', 
-    href: 'https://team.locdoc.net/employee-benefits', 
+  {
+    key: 'benefits',
+    internal: true, // in-site: /employee-benefits
     icon: 'local_hospital',
     name: 'My Benefits',
     desc: 'Access your health, dental, and other employee benefits information.',
-    btnText: 'View Benefits' 
+    btnText: 'View Benefits'
   },
-  { 
-    key: 'events', 
-    href: 'https://team.locdoc.net/annualevents', 
+  {
+    key: 'events',
+    internal: true, // in-site: /annualevents
     icon: 'celebration',
     name: 'Company Events',
     desc: 'Stay up to date on annual company gatherings and upcoming events.',
-    btnText: 'View Events' 
+    btnText: 'View Events'
   },
-  { 
-    key: 'mission-vision', 
-    href: 'https://team.locdoc.net/vto', 
+  {
+    key: 'mission-vision',
+    internal: true, // in-site: /vto
     icon: 'flag',
     name: 'Mission & Vision',
     desc: 'Read about our core values, mission, and long-term vision.',
-    btnText: 'View Mission & Vision' 
+    btnText: 'View Mission & Vision'
   },
   {
     key: 'policies',
@@ -107,9 +112,9 @@ const DESTINATIONS = [
     desc: 'Read the official employee handbook for general rules and expectations.',
     btnText: 'Open Handbook' 
   },
-  { 
+  {
     key: 'nexus-hub',
-    href: 'https://hub-nexus.locdoc.net',
+    href: 'https://lab-hub.locdoc.net/',
     icon: 'support_agent',
     name: 'Nexus Hub',
     desc: 'Submit IT support tickets and track lab project management.',

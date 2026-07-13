@@ -13,7 +13,8 @@
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
-// Yearly events in calendar order. `href` (optional) opens a details page in a new tab.
+// Yearly events in calendar order. `href` (optional) links to a details page: a relative path
+// stays in-site in the same tab; an absolute URL is treated as external and opens in a new tab.
 const EVENTS = [
   { name: 'Family Picnic', season: 'Spring', icon: 'outdoor_grill',
     desc: 'Saturday afternoon at a park — a cookout with burgers, brats, dogs & chicken. Corn hole tournament, bounce house, bike parade, and kite contest.' },
@@ -21,7 +22,7 @@ const EVENTS = [
     desc: 'Saturday at the bowling alley. Compete for Highest Team Score, Best Team Uniform, Most Strikes, and Most Splits.' },
   { name: 'Golf Tournament', season: 'Fall', icon: 'golf_course',
     desc: '2-person team, best net score. Saturday at the golf course — Closest to Pin, Farthest Drive, Shortest Drive, and Longest Putt.',
-    href: 'https://team.locdoc.net/golfclassic' },
+    href: '/golfclassic' },
   { name: 'Christmas Breakfast', season: 'Winter', icon: 'bakery_dining',
     desc: '2nd Wednesday in December.' },
   { name: 'Annual Awards', season: 'Winter', icon: 'emoji_events',
@@ -80,8 +81,12 @@ class AnnualEvents extends HTMLElement {
   }
 
   _card(e) {
+    // Relative href → an in-site page: same tab, and no "opens in a new tab" affordance.
+    const external = e.href && !e.href.startsWith('/');
     const link = e.href
-      ? `<a class="evt-link" href="${e.href}" target="_blank" rel="noopener">Details <span class="material-symbols-outlined">open_in_new</span></a>`
+      ? (external
+        ? `<a class="evt-link" href="${e.href}" target="_blank" rel="noopener">Details <span class="material-symbols-outlined">open_in_new</span></a>`
+        : `<a class="evt-link" href="${e.href}" target="_top">Details <span class="material-symbols-outlined">chevron_right</span></a>`)
       : '';
     return `
       <div class="evt">

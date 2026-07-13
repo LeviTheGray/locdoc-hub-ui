@@ -18,7 +18,7 @@
 
 import { TOKENS } from './tokens.js';
 
-const ONE_ON_ONE_URL = 'https://team.locdoc.net/one-on-ones';
+const ONE_ON_ONE_URL = '/one-on-ones'; // in-site: relative, not a hardcoded team.locdoc.net URL
 
 function initials(n) { return (n || '?').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase(); }
 function avatar(p) { return p.headshotUrl ? `<img class="avatar" src="${p.headshotUrl}" alt="">` : `<div class="avatar">${initials(p.name)}</div>`; }
