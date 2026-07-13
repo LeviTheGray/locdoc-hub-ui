@@ -22,7 +22,7 @@
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
 // Internal destinations (handled by Velo via the 'navigate' event) must list their key here.
-const INTERNAL_KEYS = ['hub', 'parts-spotlight'];
+const INTERNAL_KEYS = ['hub', 'parts-spotlight', 'profit-sharing', 'policies'];
 
 // Google Calendar embed. Paste the `src` URL from Google Calendar →
 // Settings → [calendar] → Integrate calendar → "Embed code" (use the URL inside src="…").
@@ -51,13 +51,13 @@ const DESTINATIONS = [
     desc: 'Open the operations management system.',
     btnText: 'Open OMS' 
   },
-  { 
+  {
     key: 'profit-sharing',
-    href: 'https://team.locdoc.net/resources?doc=Profit%20Sharing',
+    internal: true, // in-site: Velo maps this to /resources?doc=Profit%20Sharing
     icon: 'payments',
     name: 'Profit Sharing',
     desc: 'Information and updates regarding the employee profit sharing program.',
-    btnText: 'View Profit Sharing' 
+    btnText: 'View Profit Sharing'
   },
   { 
     key: 'benefits', 
@@ -85,7 +85,7 @@ const DESTINATIONS = [
   },
   {
     key: 'policies',
-    href: 'https://team.locdoc.net/resource',
+    internal: true, // in-site: Velo maps this to /resource
     icon: 'policy',
     name: 'Policies',
     desc: 'Important company policies, guidelines, and internal resources.',
