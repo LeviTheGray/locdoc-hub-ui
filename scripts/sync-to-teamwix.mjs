@@ -5,8 +5,12 @@
  * imported as a node_module at Wix runtime. Instead this script writes GENERATED copies into
  * teamwix from the source-of-truth files here. Edit the sources in this repo, then run:
  *
- *   npm run sync:teamwix              # uses ../teamwix
+ *   npm run sync:teamwix              # uses ../teamwix-v2
  *   TEAMWIX_PATH=/path/to/teamwix npm run sync:teamwix
+ *
+ * The Wix-connected repo is teamwix-v2 (Loc-Doc-Security org). The older ../teamwix is the
+ * personal-account repo that lost its Wix integration — it still exists on disk, so the default
+ * below must stay pinned to teamwix-v2 or syncs land in a repo that no longer deploys.
  *
  * The Wix custom-element runtime DOES resolve sibling imports (validated with a probe), so the
  * elements import './tokens.js' directly — no inlining needed; we just copy the files.
@@ -17,7 +21,7 @@ import { dirname, join, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
-const teamwix = process.env.TEAMWIX_PATH || resolve(repoRoot, '..', 'teamwix');
+const teamwix = process.env.TEAMWIX_PATH || resolve(repoRoot, '..', 'teamwix-v2');
 
 if (!existsSync(teamwix)) {
   console.error(`✗ teamwix repo not found at: ${teamwix}\n  Set TEAMWIX_PATH=/path/to/teamwix and retry.`);

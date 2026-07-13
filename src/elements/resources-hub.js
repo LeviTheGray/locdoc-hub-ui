@@ -22,6 +22,15 @@
  * Categories are derived from the data, so they track whatever the collection contains.
  * If no `resources` are provided, the PLACEHOLDER list below renders so the layout is previewable.
  *
+ * Deep links (read straight off the URL — no Velo involvement):
+ *   ?tag=<category>  pre-filters to one category and retitles the hero, so a single Resources page
+ *                    can serve as the landing page for a content type. `/resources?tag=parts-spotlight`
+ *                    is the Parts Spotlight view. The tag is slug-matched against the categories in
+ *                    the data, so `parts-spotlight`, `Parts Spotlight` and `parts%20spotlight` all hit.
+ *                    Adding a content type = a new Drive folder + category value upstream; no new page.
+ *   ?doc=<id|title>  opens that resource's reader directly.
+ *   ?q=<term>        pre-fills the search box.
+ *
  * Editor setup (one time): Add → Embed Code → Custom Element → choose this file, set the tag name
  * to `resources-hub`, give the element the ID `resourcesHub`, and set the page to Members-Only.
  */
@@ -38,8 +47,23 @@ const CATEGORY_ICON = {
   'tutorial': 'school',
   'form': 'edit_document',
   'guide': 'menu_book',
+  'parts spotlight': 'inventory_2',
 };
 const DEFAULT_ICON = 'description';
+
+// Hero copy per category for the ?tag= landing view. Categories without an entry fall back to a
+// generic "<Category>" heading, so a new content type works without touching this map.
+const CATEGORY_HERO = {
+  'parts spotlight': {
+    title: 'Parts Spotlight',
+    blurb: 'Deep-dives from the purchasing team on the parts we stock — what they are, when to use them, and what to order.',
+  },
+};
+
+// 'Parts Spotlight' / 'parts-spotlight' / 'parts spotlight' → 'parts-spotlight'
+function slug(s) {
+  return String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 
 // ⚠️ PLACEHOLDER DATA — only used until the page passes live `resources` via init-data.
 const PLACEHOLDER = [
@@ -158,14 +182,15 @@ class ResourcesHub extends HTMLElement {
     this._view = 'list';
     this._activeId = null;
     this._deepDoc = null; // pending ?doc= deep-link to open once data arrives
+    this._deepTag = null; // pending ?tag= category filter, resolved once data arrives
   }
 
   connectedCallback() {
     ensureMaterialSymbols();
-    // Deep-link support: /resources?doc=<title|id> opens that resource's reader; ?q=<term> pre-fills search.
     try {
       const params = new URLSearchParams(window.location.search);
       this._deepDoc = params.get('doc');
+      this._deepTag = params.get('tag');
       const q = params.get('q');
       if (q) this._q = q.trim().toLowerCase();
     } catch (e) { /* no-op */ }
@@ -184,10 +209,20 @@ class ResourcesHub extends HTMLElement {
     if (Array.isArray(parsed.resources) && parsed.resources.length) {
       this._resources = parsed.resources;
     }
-    this._category = 'All';
-    this._renderChips();
+    // Resolve ?tag= against the categories the live data actually has. Only reset to 'All' when
+    // there's no tag to honour — otherwise the incoming CMS data would clobber the deep-link.
+    this._category = this._resolveTag() || 'All';
     this._renderList();
     this._maybeOpenDeepLink();
+  }
+
+  // ?tag=parts-spotlight → the real category string ('Parts Spotlight') if the data has one that
+  // slug-matches. An unknown tag returns null, so the page falls back to the full list rather than
+  // rendering an empty one.
+  _resolveTag() {
+    if (!this._deepTag) return null;
+    const want = slug(this._deepTag);
+    return this._categories().find(c => slug(c) === want) || null;
   }
 
   // If the URL carried ?doc=<value>, open the matching resource once (by id, googleDocId, or a
@@ -220,16 +255,30 @@ class ResourcesHub extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${STYLES}</style>
       <header class="header"><h1>Resources</h1><p>SOPs · Policies · Processes · Tutorials</p></header>
-      <section class="hero">
-        <h2>Find what you need</h2>
-        <p>Search and filter company processes, policies and tutorials. Open one to read it here or jump to the source document.</p>
-      </section>
+      <section class="hero" data-hero></section>
       <main class="main" data-main></main>`;
     this._renderList();
   }
 
+  // Hero tracks the active category, so a ?tag= link reads as that content type's own landing page.
+  _renderHero() {
+    const hero = this.shadowRoot.querySelector('[data-hero]');
+    if (!hero) return;
+    const copy = this._category === 'All'
+      ? {
+          title: 'Find what you need',
+          blurb: 'Search and filter company processes, policies and tutorials. Open one to read it here or jump to the source document.',
+        }
+      : (CATEGORY_HERO[this._category.toLowerCase()] || {
+          title: this._category,
+          blurb: `Browse the latest ${this._category} documents.`,
+        });
+    hero.innerHTML = `<h2>${this._esc(copy.title)}</h2><p>${this._esc(copy.blurb)}</p>`;
+  }
+
   // ---- List view ----
   _renderList() {
+    this._renderHero();
     const main = this.shadowRoot.querySelector('[data-main]');
     main.innerHTML = `
       <div class="toolbar">
@@ -250,6 +299,7 @@ class ResourcesHub extends HTMLElement {
       const chip = e.target.closest('[data-cat]');
       if (!chip) return;
       this._category = chip.getAttribute('data-cat');
+      this._renderHero();
       this._renderChips();
       this._renderCards();
     });

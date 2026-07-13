@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildLiveMeasurables, computeStreak, levelFor, weeksInMonth,
+  buildLiveMeasurables, computeStreak, currentPeriod, levelFor, periodMinus, weeksInMonth,
 } from '../src/scoring-core.js';
 
 const pts = (r) => buildLiveMeasurables(r).metrics.reduce((s, m) => s + m.points, 0);
@@ -39,13 +39,40 @@ test('no quality data is excluded from the blend (no penalty)', () => {
   assert.equal(pts(r), 33);
 });
 
+// computeStreak decides grace by comparing `period` against the real wall clock (currentPeriod()),
+// so these periods are derived rather than hardcoded — a fixed month silently stops exercising the
+// grace branch the moment it falls into the past.
 test('monthly streak counts consecutive complete months with current-month grace', () => {
   const weeks = (p) => weeksInMonth(p).map(w => ({ weekStart: w }));
-  const weekly = [...weeks('2026-04'), ...weeks('2026-05')];
-  const clean  = [...weeks('2026-04'), ...weeks('2026-05')];
-  const sub    = [{ dateMonth: '2026-04-10' }, { dateMonth: '2026-05-10' }];
-  assert.equal(computeStreak('2026-06', weekly, sub, clean), 2);
-  assert.equal(computeStreak('2026-06', weekly, sub, weeks('2026-04')), 0);
+  const now = currentPeriod();
+  const prev1 = periodMinus(now, 1);
+  const prev2 = periodMinus(now, 2);
+
+  const weekly = [...weeks(prev2), ...weeks(prev1)];
+  const clean  = [...weeks(prev2), ...weeks(prev1)];
+  const sub    = [{ dateMonth: `${prev2}-10` }, { dateMonth: `${prev1}-10` }];
+
+  // The in-progress month has no data yet, but is skipped rather than resetting the streak.
+  assert.equal(computeStreak(now, weekly, sub, clean), 2);
+
+  // Grace covers only the current month: the gap in prev1 still breaks the streak.
+  assert.equal(computeStreak(now, weekly, sub, weeks(prev2)), 0);
+});
+
+test('an incomplete PAST month gets no grace and resets the streak', () => {
+  const weeks = (p) => weeksInMonth(p).map(w => ({ weekStart: w }));
+  const now = currentPeriod();
+  const prev1 = periodMinus(now, 1);
+  const prev2 = periodMinus(now, 2);
+
+  // prev2 is complete, prev1 is empty. Scoring prev1 — a past, incomplete month — earns no grace.
+  const weekly = weeks(prev2);
+  const clean  = weeks(prev2);
+  const sub    = [{ dateMonth: `${prev2}-10` }];
+  assert.equal(computeStreak(prev1, weekly, sub, clean), 0);
+
+  // Same data scored at prev2 itself, which IS complete, counts it.
+  assert.equal(computeStreak(prev2, weekly, sub, clean), 1);
 });
 
 test('levelFor thresholds', () => {

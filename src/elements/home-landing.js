@@ -22,7 +22,7 @@
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
 // Internal destinations (handled by Velo via the 'navigate' event) must list their key here.
-const INTERNAL_KEYS = ['hub'];
+const INTERNAL_KEYS = ['hub', 'parts-spotlight'];
 
 // Google Calendar embed. Paste the `src` URL from Google Calendar →
 // Settings → [calendar] → Integrate calendar → "Embed code" (use the URL inside src="…").
@@ -83,13 +83,21 @@ const DESTINATIONS = [
     desc: 'Read about our core values, mission, and long-term vision.',
     btnText: 'View Mission & Vision' 
   },
-  { 
-    key: 'policies', 
-    href: 'https://team.locdoc.net/resource', 
+  {
+    key: 'policies',
+    href: 'https://team.locdoc.net/resource',
     icon: 'policy',
     name: 'Policies',
     desc: 'Important company policies, guidelines, and internal resources.',
-    btnText: 'View Policies' 
+    btnText: 'View Policies'
+  },
+  {
+    key: 'parts-spotlight',
+    internal: true, // stays in-site: Velo maps this to /resources?tag=parts-spotlight
+    icon: 'inventory_2',
+    name: 'Parts Spotlight',
+    desc: 'Purchasing’s deep-dives on the parts we stock — what they are and when to use them.',
+    btnText: 'View Parts Spotlights'
   },
   { 
     key: 'handbook', 
