@@ -48,9 +48,16 @@ const ELEMENTS = [
   'cleanliness-report.js', 'wednesday-meeting.js', 'mission-vision.js',
   'core-values-data.js', 'core-values.js', 'resources-hub.js',
   'meetings.js', 'annual-events.js', 'company-holidays.js', 'benefits.js',
+  'shop.js',
 ];
 const targets = [
   { src: 'src/scoring-core.js', to: join(teamwix, 'src', 'backend', 'scoring-core.js'), mode: 'replace' },
+  // Pricing runs in BOTH places: the element previews a line total in the browser, and the backend
+  // recomputes the authoritative total at checkout. One source, copied to both, so they can't drift.
+  // It lives in src/elements/ so `import './shop-pricing.js'` in shop.js resolves as a real sibling
+  // here too — not just after the sync — which keeps the element runnable and testable in this repo.
+  { src: 'src/elements/shop-pricing.js', to: join(teamwix, 'src', 'backend', 'shop-pricing.js'), mode: 'replace' },
+  { src: 'src/elements/shop-pricing.js', to: join(CE, 'shop-pricing.js'), mode: 'prepend' },
   ...ELEMENTS.map(name => ({ src: `src/elements/${name}`, to: join(CE, name), mode: 'prepend' })),
 ];
 

@@ -1,0 +1,164 @@
+/**
+ * Shop pricing — SOURCE OF TRUTH for every line total in the unified Shop.
+ *
+ * Pure functions, no Wix APIs: runs in plain Node (tested), in the browser (the element's live
+ * price preview), and in the Wix backend (the authoritative total at checkout). It is synced into
+ * teamwix as `backend/shop-pricing.js`, the same way `scoring-core.js` is.
+ *
+ * WHY THIS EXISTS
+ * The old shop had these rules written twice — once in `San Mar Shop.awvof.js` and once in
+ * `sanmarPricing.jsw` — free to drift. Worse, `submitSanmarOrder` TRUSTED the client's `total`
+ * whenever its own math produced 0, so a crafted cart could set its own price. Here, a line total
+ * is ALWAYS recomputed from its inputs; a submitted `total` is ignored outright. The only value the
+ * client supplies is the price the user typed (SanMar/Amazon items have no catalog to look it up
+ * in), and the fee math on top of it is ours.
+ *
+ * RULES (preserved exactly from the current SanMar shop — this is the behavioural contract):
+ *   • Garments with a logo pay a flat $3 logo fee per unit.
+ *   • HATS NEVER PAY THE GARMENT LOGO FEE. A hat with a logo pays only its placement fee:
+ *     front 3.5, side 6, back 6. A hat with a logo but no placement pays 0 (validation forces one).
+ *   • "No logo" means empty, or one of NONE_LOGO_VALUES, or anything starting with "select ".
+ */
+
+/** Shirt / jacket logo add-on per garment (not hats). */
+export const GARMENT_LOGO_FEE_PER_UNIT = 3;
+
+/** Hat logo fee per hat by placement. Includes the logo — hats pay no separate garment logo fee. */
+export const HAT_LOGO_PLACEMENT_FEES = {
+  'Front': 3.5,
+  'Front Center': 3.5,
+  'Left Side': 6,
+  'Right Side': 6,
+  'Back': 6,
+  'None': 0,
+};
+
+const NONE_LOGO_VALUES = new Set([
+  '', 'none', 'no', 'no logo', 'n/a', 'select a logo', 'select logo', 'choose a logo',
+]);
+
+/** Money in any shape the UI might hand us ("$24.00", "24", 24) → a number. Never NaN. */
+export function parseMoney(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const n = Number(String(v == null ? '' : v).trim().replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function qtyOf(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+}
+
+const round2 = (n) => Math.round(n * 100) / 100;
+
+/** A logo selection that actually costs money (i.e. not "none" and not a placeholder option). */
+export function hasLogoCharge(logo) {
+  const key = String(logo == null ? '' : logo).trim().toLowerCase();
+  if (!key || NONE_LOGO_VALUES.has(key)) return false;
+  return !key.startsWith('select ');
+}
+
+/** Hat placement fee. Exact match first, then a substring fallback for editor label drift. */
+export function hatPlacementFee(placement) {
+  const key = String(placement == null ? '' : placement).trim();
+  if (!key || NONE_LOGO_VALUES.has(key.toLowerCase())) return 0;
+  if (Object.prototype.hasOwnProperty.call(HAT_LOGO_PLACEMENT_FEES, key)) {
+    return HAT_LOGO_PLACEMENT_FEES[key];
+  }
+  const lower = key.toLowerCase();
+  if (lower.includes('front')) return 3.5;
+  if (lower.includes('back')) return 6;
+  if (lower.includes('side')) return 6;
+  return 0;
+}
+
+/** Per-unit logo/placement fees for a SanMar line. Hats: placement only. Garments: flat fee only. */
+export function logoFeesPerUnit(line) {
+  if (!hasLogoCharge(line && line.logo)) return { logoPerUnit: 0, placementPerUnit: 0 };
+  if (line && line.isHat) {
+    return { logoPerUnit: 0, placementPerUnit: hatPlacementFee(line.logoPlacement) };
+  }
+  return { logoPerUnit: GARMENT_LOGO_FEE_PER_UNIT, placementPerUnit: 0 };
+}
+
+/**
+ * Price one SanMar line. `clothingPrice` is what the user typed; everything else is derived.
+ * Any `total` on the input is deliberately ignored.
+ */
+export function priceSanmarLine(line) {
+  const quantity = qtyOf(line && line.quantity);
+  const clothingPrice = parseMoney(line && line.clothingPrice);
+  const { logoPerUnit, placementPerUnit } = logoFeesPerUnit(line || {});
+  const unitPrice = round2(clothingPrice + logoPerUnit + placementPerUnit);
+  return {
+    clothingPrice,
+    logoPricePerUnit: logoPerUnit,
+    placementPricePerUnit: placementPerUnit,
+    unitPrice,
+    quantity,
+    total: round2(unitPrice * quantity),
+  };
+}
+
+/** Amazon and uniform lines are a flat unit price × quantity — no fee math. */
+export function priceFlatLine(line) {
+  const quantity = qtyOf(line && line.quantity);
+  const unitPrice = parseMoney(line && (line.unitPrice != null ? line.unitPrice : line.price));
+  return { unitPrice, quantity, total: round2(unitPrice * quantity) };
+}
+
+/** Price any line by its source. The one entry point both the element and the backend call. */
+export function priceLine(line) {
+  return (line && line.source) === 'sanmar' ? priceSanmarLine(line) : priceFlatLine(line);
+}
+
+/** Cart total, recomputed from the lines — never summed from client-supplied totals. */
+export function cartTotal(lines) {
+  return round2((lines || []).reduce((sum, l) => sum + priceLine(l).total, 0));
+}
+
+/** Points charged for a cart. Points are 1:1 with dollars, rounded to a whole point. */
+export function pointsForCart(lines) {
+  return Math.round(cartTotal(lines));
+}
+
+/**
+ * Validation, in the exact order (and with the exact messages) the current SanMar shop uses, so the
+ * behaviour techs are used to is preserved. Returns null when the line is valid.
+ */
+export function validateLine(line) {
+  const l = line || {};
+  const source = l.source;
+
+  if (source === 'amazon') {
+    if (!/^https?:\/\//i.test(String(l.link || '').trim())) return 'Enter a valid http(s) link.';
+    if (priceFlatLine(l).total <= 0) return 'Enter a valid quantity and price.';
+    return null;
+  }
+
+  if (source === 'uniform') {
+    if (!l.productId) return 'Pick a product.';
+    if (!String(l.size || '').trim()) return 'Select a size.';
+    return null;
+  }
+
+  // sanmar
+  if (!String(l.itemNumber || '').trim()) return 'Enter an item number.';
+  if (priceSanmarLine(l).total <= 0) return 'Enter a valid clothing price to calculate total.';
+  if (parseMoney(l.clothingPrice) <= 0) return 'Enter the clothing price (logo is added separately).';
+  if (!(Number(l.quantity) > 0)) return 'Enter a valid quantity.';
+  if (!String(l.color || '').trim()) return 'Enter a color.';
+  if (l.isHat) {
+    if (!String(l.hatSize || '').trim()) return 'Select a hat size.';
+    if (hasLogoCharge(l.logo) && !String(l.logoPlacement || '').trim()) {
+      return 'Select logo placement for hat orders with a logo.';
+    }
+  }
+  if (l.isPants) {
+    if (!String(l.pantSize || '').trim()) return 'Enter pant size.';
+    if (!String(l.inseam || '').trim()) return 'Enter inseam.';
+  }
+  if (!l.isHat && !l.isPants && !String(l.size || '').trim()) return 'Enter a size.';
+  if (hasLogoCharge(l.logo) && !String(l.logoColor || '').trim()) return 'Select a logo color.';
+  return null;
+}
