@@ -345,29 +345,71 @@ class LocDocShop extends HTMLElement {
       ${this._adminLoaded && !this._adminOrders.length ? '<div class="empty">No open orders.</div>' : rows}`;
   }
 
+  // The `source` the pricing module expects, from the order header's shopSource.
+  _adminSource() {
+    const s = String(this._adminOrder.order.shopSource || '').toLowerCase();
+    return s === 'sanmar' ? 'sanmar' : s === 'amazon' ? 'amazon' : 'uniform';
+  }
+
+  // Price one line the SAME way the backend will, so what the admin sees is what gets confirmed.
+  // `override` is the unit price currently typed into the box (undefined → use the stored one).
+  _adminPriceLine(it, override) {
+    const source = this._adminSource();
+    const line = { ...it, source };
+    if (override != null && override !== '') {
+      if (source === 'sanmar') line.clothingPrice = Number(override);
+      else line.unitPrice = Number(override);
+    }
+    return priceLine(line);
+  }
+
   _adminReview() {
     const { order, items, charged } = this._adminOrder;
-    const isSanmar = String(order.shopSource || '').toLowerCase() === 'sanmar';
+    const isSanmar = this._adminSource() === 'sanmar';
 
     // SanMar lines price off clothingPrice (logo/placement fees are added on top by the pricing
     // module); everything else prices off unitPrice. Edit whichever this source actually uses.
+    //
+    // The unit price is NOT the line total: a SanMar hat carries a placement fee, a garment carries
+    // a logo fee. Showing the bare unit price made a $59.21 hat look like it cost $59.21 when the
+    // member was charged $62.71 — so show the fees and the real line total next to the input.
     const lines = items.map((it) => {
       const price = isSanmar ? it.clothingPrice : it.unitPrice;
       const label = it.itemNumber || it.name || it.productName || 'Item';
       const bits = [it.size || it.hatSize || it.pantSize, it.color, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
+      const p = this._adminPriceLine(it);
+      const fee = (Number(p.logoPricePerUnit) || 0) + (Number(p.placementPricePerUnit) || 0);
       return `
         <div class="line">
           <div class="t">
             <b>${this._esc(label)}</b>
             <span>${this._esc(bits.join(' · '))}</span>
+            ${fee ? `<span data-fee-for="${this._escA(it._id)}">${this._feeNote(it, fee)}</span>` : ''}
           </div>
           <label style="display:flex;align-items:center;gap:6px">
             <span style="color:var(--gray-400);font-size:12px">Unit $</span>
             <input type="number" step="0.01" min="0" style="width:90px"
               data-price="${this._escA(it._id)}" value="${Number(price) || 0}">
           </label>
+          <div class="amt" data-line-total="${this._escA(it._id)}" style="width:80px;text-align:right">
+            $${p.total.toFixed(2)}
+          </div>
         </div>`;
     }).join('');
+
+    // Order total + points, live as the admin edits. This is the number that actually gets confirmed.
+    const orderTotal = items.reduce((s, it) => s + this._adminPriceLine(it).total, 0);
+    const totals = `
+      <div class="totals" style="margin-top:14px">
+        <span>Order total</span>
+        <span class="big" data-order-total>$${orderTotal.toFixed(2)}</span>
+      </div>
+      <div class="totals" style="font-weight:600;font-size:13px;color:var(--gray-600)">
+        <span>Points</span><span data-order-points>${Math.round(orderTotal)} pts</span>
+      </div>
+      <div class="totals" style="font-weight:600;font-size:13px;color:var(--gray-400)">
+        <span>Member was charged</span><span>${charged} pts</span>
+      </div>`;
 
     const statusOpts = this._adminStatuses
       .map((s) => `<option value="${this._escA(s)}" ${s === order.status ? 'selected' : ''}>${this._esc(s)}</option>`)
@@ -387,6 +429,7 @@ class LocDocShop extends HTMLElement {
 
       <h2 style="margin-top:8px">Line items</h2>
       ${lines || '<div class="empty">No line items found for this order.</div>'}
+      ${items.length ? totals : ''}
       ${this._adminPreview ? this._adminDecision() : `
         <div class="row" style="margin-top:12px">
           <button class="btn" data-admin-price ${this._adminBusy ? 'disabled' : ''}>
@@ -458,6 +501,35 @@ class LocDocShop extends HTMLElement {
       </div>`;
   }
 
+  // "+ $3.50 hat placement fee" — name the fee so the admin knows where the extra came from.
+  _feeNote(it, fee) {
+    const what = it.isHat ? 'hat placement fee' : 'logo fee';
+    return `+ $${fee.toFixed(2)} ${what} per unit`;
+  }
+
+  // Recompute the line totals and the order total as the admin types, WITHOUT re-rendering (that
+  // would blow away the input they're in the middle of editing).
+  _adminSyncTotals(panel) {
+    const { items } = this._adminOrder;
+    let total = 0;
+    for (const it of items) {
+      const input = panel.querySelector(`[data-price="${it._id}"]`);
+      const p = this._adminPriceLine(it, input ? input.value : undefined);
+      total += p.total;
+
+      const cell = panel.querySelector(`[data-line-total="${it._id}"]`);
+      if (cell) cell.textContent = `$${p.total.toFixed(2)}`;
+
+      const fee = (Number(p.logoPricePerUnit) || 0) + (Number(p.placementPricePerUnit) || 0);
+      const note = panel.querySelector(`[data-fee-for="${it._id}"]`);
+      if (note) note.textContent = fee ? this._feeNote(it, fee) : '';
+    }
+    const t = panel.querySelector('[data-order-total]');
+    if (t) t.textContent = `$${total.toFixed(2)}`;
+    const pts = panel.querySelector('[data-order-points]');
+    if (pts) pts.textContent = `${Math.round(total)} pts`;
+  }
+
   _confirmedFrom(panel) {
     return [...panel.querySelectorAll('[data-price]')].map((i) => ({
       _id: i.getAttribute('data-price'),
@@ -468,6 +540,10 @@ class LocDocShop extends HTMLElement {
   _wireAdmin(panel) {
     panel.querySelectorAll('[data-review]').forEach((b) =>
       b.addEventListener('click', () => this._adminSend('admin-review', { orderId: b.getAttribute('data-review') })));
+
+    // Live totals while editing a price.
+    panel.querySelectorAll('[data-price]').forEach((i) =>
+      i.addEventListener('input', () => this._adminSyncTotals(panel)));
 
     const back = panel.querySelector('[data-admin-back]');
     if (back) back.addEventListener('click', () => {
