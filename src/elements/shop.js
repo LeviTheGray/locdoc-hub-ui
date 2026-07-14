@@ -379,7 +379,7 @@ class LocDocShop extends HTMLElement {
         <button class="btn" data-admin-back>← Back to queue</button>
       </div>
       <div class="m" style="color:var(--gray-400);font-size:13px;margin-bottom:12px">
-        ${this._esc(order.memberName || order.email || '')} · status <b>${this._esc(order.status)}</b> ·
+        ${this._esc(order.memberName || order.memberEmail || '')} · status <b>${this._esc(order.status)}</b> ·
         charged <b>${charged} pts</b>${order.pricingConfirmed ? '' : ' (member\'s estimate)'}
       </div>
 
