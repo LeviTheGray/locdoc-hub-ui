@@ -11,7 +11,14 @@
  * a "not scheduled" notice. The submission presents automatically on that date.
  *
  * Data handoff (mirrors cleanliness-audit):
- *   • Velo → element :  init-data    { currentUser:{ name, email }, scheduledDate } | { error }
+ *   • Velo → element :  init-data    { currentUser:{ name, email }, scheduledDate,
+ *                                     admin, techs:[{ name, email }] } | { error }
+ *
+ * ADMIN OVERRIDE: when init-data says `admin`, the form can be switched to file a spotlight FOR
+ * another tech on ANY date, bypassing the schedule gate — the escape hatch for a tech who was
+ * never put on an agenda, or whose agenda name doesn't match their Employees record. It dispatches
+ * 'submit-spotlight-for' instead of 'submit-spotlight'. Showing the panel is only a UI affordance;
+ * techSpotlight.web.js re-checks admin on the server, so faking `admin` here buys nothing.
  *                       photo-result { id, url } | { id, error }   (correlated by id, carries _ts)
  *                       submit-result { ok:true } | { ok:false, error }   (carries _ts)
  *   • element → Velo :  'upload-photo'    { id, dataUrl }
@@ -91,6 +98,13 @@ class TechSpotlightSubmit extends HTMLElement {
     this._loaded = false;
     this._error = null;
     this._scheduledDate = null; // ISO 'YYYY-MM-DD' or null (null → not scheduled, form blocked)
+    // Admin override: file a spotlight FOR a tech on ANY date, bypassing the schedule gate.
+    this._admin = false;        // from init-data; re-checked server-side on submit
+    this._techs = [];           // [{ name, email }] roster for the picker
+    this._override = false;     // is the override form active?
+    this._forTech = '';         // picked tech's email
+    this._forDate = '';         // picked ISO date
+    this._draft = {};           // title/problem/solution kept across re-renders
   }
 
   connectedCallback() {
@@ -111,8 +125,13 @@ class TechSpotlightSubmit extends HTMLElement {
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
     this._user = p.currentUser || null;
     this._scheduledDate = p.scheduledDate || null;
+    this._admin = Boolean(p.admin);
+    this._techs = Array.isArray(p.techs) ? p.techs : [];
     this._error = p.error || null;
     this._loaded = true;
+    // An admin who isn't scheduled has nothing to do here EXCEPT override, so open it for them
+    // rather than showing the "you're not scheduled" dead end.
+    if (this._admin && !this._scheduledDate) this._override = true;
     this._render();
   }
 
@@ -128,12 +147,18 @@ class TechSpotlightSubmit extends HTMLElement {
       const rm = e.target.closest('[data-rm]');
       if (rm) { this._removePhoto(rm.getAttribute('data-rm')); return; }
       if (e.target.closest('[data-submit]')) { this._submit(); return; }
+      const tog = e.target.closest('[data-override-toggle]');
+      if (tog) { this._saveDraft(); this._override = !this._override; this._render(); return; }
       if (e.target.closest('[data-nav]')) {
         this.dispatchEvent(new CustomEvent('navigate', { detail: { key: 'hub' }, bubbles: true, composed: true }));
       }
     });
     this.shadowRoot.addEventListener('change', (e) => {
-      if (e.target && e.target.id === 'file') this._onFiles(e.target.files, e.target);
+      if (!e.target) return;
+      if (e.target.id === 'file') { this._onFiles(e.target.files, e.target); return; }
+      // Keep the override picks in state — _render() rebuilds the form and would drop them.
+      if (e.target.id === 'for-tech') { this._forTech = e.target.value; this._syncSubmit(); return; }
+      if (e.target.id === 'for-date') { this._forDate = e.target.value; this._syncSubmit(); }
     });
     this.shadowRoot.addEventListener('input', (e) => {
       const id = e.target && e.target.getAttribute && e.target.getAttribute('data-cap-id');
@@ -146,9 +171,12 @@ class TechSpotlightSubmit extends HTMLElement {
   _render() {
     const main = this.shadowRoot.querySelector('[data-main]');
     if (this._done) {
+      const forTech = this._override
+        && (this._techs.find(t => t.email === this._forTech) || {}).name;
       main.innerHTML = `<div class="done"><div class="check">✅</div>
-        <h2>Thanks — your spotlight is set!</h2>
-        <p class="sub" style="margin-top:8px">It'll show automatically at the Wednesday meeting on your scheduled date.</p>
+        <h2>${forTech ? `Spotlight filed for ${esc(forTech)}` : 'Thanks — your spotlight is set!'}</h2>
+        <p class="sub" style="margin-top:8px">It'll show automatically at the Wednesday meeting on
+          ${forTech ? 'the date you picked' : 'your scheduled date'}.</p>
         <button class="link" data-nav>← Back to the Hub</button></div>`;
       return;
     }
@@ -158,33 +186,38 @@ class TechSpotlightSubmit extends HTMLElement {
         <button class="link" data-nav>← Back to the Hub</button>`;
       return;
     }
-    // Not scheduled on any upcoming agenda date → block submitting.
-    if (!this._scheduledDate) {
+    // Not scheduled on any upcoming agenda date → block submitting. Admins are exempt: they get
+    // the override instead of a dead end (that's the whole point of it).
+    if (!this._scheduledDate && !this._override) {
       const who = this._user && this._user.name ? esc(this._user.name) : '';
       main.innerHTML = `<div class="notice"><div class="ico">🗓️</div>
         <h2>You're not scheduled yet</h2>
         <p>Tech Spotlights run on a schedule set in the Weekly Agenda. When your manager adds you
            to an upcoming Wednesday, this form will open up for you.</p>
         ${who ? `<p style="font-size:12px;color:var(--gray-400)">We looked for an upcoming spotlight assigned to <b>${who}</b>. If that name doesn't match the Weekly Agenda exactly, ask your manager to fix it.</p>` : ''}
+        ${this._admin ? `<button class="link" data-override-toggle>Submit for a technician (admin) →</button>` : ''}
         <button class="link" data-nav>← Back to the Hub</button></div>`;
       return;
     }
 
     const name = this._user ? (this._user.name || this._user.email || '') : '';
     const email = this._user ? (this._user.email || '') : '';
+    const d = this._draft;
     main.innerHTML = `
       <p class="sub">Share a job you're proud of. Add photos and explain the problem and how you solved it — you'll walk the team through it on Wednesday.</p>
+      ${this._override ? this._overridePanel() : `
       <div class="who">
         <div class="row"><span class="who-l">Name</span><span class="who-v">${esc(name)}</span></div>
         <div class="row"><span class="who-l">Email</span><span class="who-v">${esc(email)}</span></div>
       </div>
       <div class="sched">🗓️ You're scheduled to present on <b>${esc(this._fmtSchedDate())}</b>.</div>
+      ${this._admin ? `<button class="link" data-override-toggle>Submit for someone else instead (admin) →</button>` : ''}`}
       <label class="f">Title</label>
-      <input type="text" id="title" placeholder="e.g. Seized deadbolt on a historic mortise lock">
+      <input type="text" id="title" placeholder="e.g. Seized deadbolt on a historic mortise lock" value="${esc(d.title || '')}">
       <label class="f">The problem</label>
-      <textarea id="problem" placeholder="What was the situation / what was wrong?"></textarea>
+      <textarea id="problem" placeholder="What was the situation / what was wrong?">${esc(d.problem || '')}</textarea>
       <label class="f">The solution</label>
-      <textarea id="solution" placeholder="How did you fix it?"></textarea>
+      <textarea id="solution" placeholder="How did you fix it?">${esc(d.solution || '')}</textarea>
       <label class="f">Photos <span style="font-weight:400;color:var(--gray-400)">(add a short description under each — shown beneath the photo)</span></label>
       <div class="photo-drop" data-trigger>📷 Tap to take or add photos</div>
       <input type="file" id="file" accept="image/*" multiple style="display:none">
@@ -193,6 +226,33 @@ class TechSpotlightSubmit extends HTMLElement {
       <button class="btn" data-submit>Submit Spotlight</button>`;
     this._renderThumbs();
     this._syncSubmit();
+  }
+
+  // Admin-only: pick who the spotlight is for and which date it presents on. The date is free —
+  // it does NOT have to exist on an agenda — so this covers a tech who was never scheduled, or
+  // whose agenda name doesn't match their Employees record.
+  _overridePanel() {
+    const opts = this._techs.map(t =>
+      `<option value="${esc(t.email)}" ${t.email === this._forTech ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+    return `
+      <div class="who">
+        <div class="row" style="margin-bottom:8px"><span class="who-l">Admin override</span>
+          <span class="who-v">Filing on behalf of a tech</span></div>
+        <label class="f">Technician</label>
+        <select id="for-tech"><option value="">Select a technician…</option>${opts}</select>
+        <label class="f">Presents on</label>
+        <input type="date" id="for-date" value="${esc(this._forDate)}">
+        <p style="font-size:12px;color:var(--gray-400);margin-top:8px">
+          Any date works — it doesn't need to be on the Weekly Agenda. A past date will save but
+          won't appear in the Wednesday deck, which only shows today and upcoming.</p>
+      </div>
+      ${this._scheduledDate ? `<button class="link" data-override-toggle>← Back to my own spotlight</button>` : ''}`;
+  }
+
+  // _render() rebuilds the form, so stash what's typed before toggling the override on/off.
+  _saveDraft() {
+    const v = (id) => (this._$(id) ? this._$(id).value : '');
+    this._draft = { title: v('title'), problem: v('problem'), solution: v('solution') };
   }
 
   _fmtSchedDate() {
@@ -269,8 +329,13 @@ class TechSpotlightSubmit extends HTMLElement {
     const btn = this.shadowRoot.querySelector('[data-submit]');
     if (!btn) return;
     const uploading = Object.values(this._pendingPhotos).some(Boolean);
-    btn.disabled = uploading || this._submitting;
-    btn.textContent = uploading ? 'Waiting for photos…' : (this._submitting ? 'Submitting…' : 'Submit Spotlight');
+    const needsPick = this._override && !(this._forTech && this._forDate);
+    btn.disabled = uploading || this._submitting || needsPick;
+    btn.textContent = uploading ? 'Waiting for photos…'
+      : this._submitting ? 'Submitting…'
+      : needsPick ? 'Pick a technician and date'
+      : this._override ? 'Submit for this technician'
+      : 'Submit Spotlight';
   }
 
   _submit() {
@@ -278,11 +343,23 @@ class TechSpotlightSubmit extends HTMLElement {
     const v = (id) => (this._$(id) ? this._$(id).value.trim() : '');
     const title = v('title'), problem = v('problem'), solution = v('solution');
     if (!title || !problem || !solution) { this._showMsg('Please fill in the title, problem and solution.', 'err'); return; }
+    if (this._override && !(this._forTech && this._forDate)) {
+      this._showMsg('Pick the technician and the date this spotlight presents on.', 'err'); return;
+    }
     if (Object.values(this._pendingPhotos).some(Boolean)) { this._showMsg('Please wait for photos to finish uploading.', 'err'); return; }
     this._submitting = true; this._syncSubmit();
     const photos = Object.keys(this._photos).filter(id => this._photos[id])
       .map(id => ({ url: this._photos[id], caption: (this._captions[id] || '').trim() }));
-    // Name/email are locked to the profile and re-derived server-side, so they're not sent.
+
+    // Override → 'submit-spotlight-for' with an explicit tech + date (admin-gated server-side).
+    // Otherwise name/email are locked to the profile and re-derived server-side, so aren't sent.
+    if (this._override) {
+      this.dispatchEvent(new CustomEvent('submit-spotlight-for', {
+        detail: { title, problem, solution, photos, techEmail: this._forTech, spotlightDate: this._forDate },
+        bubbles: true, composed: true,
+      }));
+      return;
+    }
     this.dispatchEvent(new CustomEvent('submit-spotlight',
       { detail: { title, problem, solution, photos }, bubbles: true, composed: true }));
   }
