@@ -271,8 +271,52 @@ const STYLES = `
   .lightbox .lb-arrow.prev { left:24px; } .lightbox .lb-arrow.next { right:24px; }
   .lightbox .lb-count { color:#fff; opacity:.8; margin-top:10px; font-size:13px; font-weight:600; letter-spacing:.04em; }
 
-  :host([data-present]) { --fs:1.35; }
-  :host([data-present]) .main { max-width:1320px; }
+  /* ---- Presenter mode ----------------------------------------------------------------
+     Projected on a conference-room TV and read from across the room, so: bigger type, and
+     use the whole panel rather than a 1320px column stranded in the middle of a 65" screen.
+
+     overflow-y is the important one. A fullscreen element does NOT scroll by default, so
+     before this, anything past the bottom edge (a tall photo, a long solution) was simply
+     unreachable — no scrollbar, no wheel, stuck. Scrolling is now possible but should stay
+     mostly unnecessary: the photo grid below is sized so a spotlight fits one screen. */
+  :host([data-present]) {
+    --fs:1.6;
+    height:100%; overflow-y:auto; background:var(--gray-50);
+  }
+  /* Belt and braces: presenter mode is driven by [data-present], but the user can also land in
+     fullscreen via the browser's own control, which wouldn't set that attribute. */
+  :host(:fullscreen) { height:100%; overflow-y:auto; background:var(--gray-50); }
+  :host([data-present]) .main { max-width:min(2200px, 94vw); padding:32px 40px 64px; }
+  :host([data-present]) .header { padding:22px 40px; }
+
+  /* Photos are the point of a spotlight — make them big enough to actually see, and use
+     object-fit:contain so a detail shot isn't cropped by the fixed tile height. Sizing off
+     vh keeps a 1–2 photo spotlight on a single screen. */
+  :host([data-present]) .sp-photos { grid-template-columns:repeat(auto-fit,minmax(460px,1fr)); gap:24px; }
+  /* 44vh leaves room for the header, tabs, and the problem/solution cards above, so the photos
+     land ABOVE the fold — they're the whole point of a spotlight and shouldn't need a scroll. */
+  :host([data-present]) .sp-photo .img { height:min(44vh, 520px); background:#111; }
+  :host([data-present]) .sp-photo .img img { object-fit:contain; }
+  :host([data-present]) .sp-photo .emoji { font-size:120px; }
+  :host([data-present]) .sp-photo .cap { padding:16px 20px; }
+  :host([data-present]) .sp-ps { margin-bottom:18px; }
+  :host([data-present]) .sp-head { margin-bottom:10px; }
+  :host([data-present]) .sp-zoom-hint { display:none; } /* nobody is clicking the TV */
+  :host([data-present]) .sp-ps .card { padding:24px 28px; }
+  :host([data-present]) .deck-btn { padding:14px 24px; font-size:18px; }
+
+  /* Most of the deck is fixed px and ignores --fs, so these stay 10–13px on a 65" screen and are
+     unreadable from the back of the room. Scale the labels that actually appear while presenting. */
+  :host([data-present]) .tab { font-size:17px; padding:12px 20px; }
+  :host([data-present]) .tab .tab-icon { font-size:21px; }
+  :host([data-present]) .header .week { font-size:17px; }
+  :host([data-present]) .sp-tech { font-size:19px; }
+  :host([data-present]) .sp-ps h4 { font-size:16px; }
+  :host([data-present]) th { font-size:16px; padding:16px 20px; }
+  :host([data-present]) td { font-size:19px; padding:16px 20px; }
+  :host([data-present]) .list-row .meta,
+  :host([data-present]) .muted,
+  :host([data-present]) .placeholder { font-size:18px; }
 
   @media (max-width:760px) {
     .drv-grid { grid-template-columns:1fr; } .drv-averages { flex-direction:row; flex-wrap:wrap; }

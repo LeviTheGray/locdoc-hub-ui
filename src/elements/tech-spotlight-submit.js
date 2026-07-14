@@ -91,6 +91,9 @@ class TechSpotlightSubmit extends HTMLElement {
     this._pendingPhotos = {}; // id → true while uploading
     this._previews = {};      // id → dataUrl (for thumb)
     this._captions = {};      // id → caption text
+    this._order = [];         // photo ids in the order they were PICKED (not upload order)
+    this._uploadWaiters = {}; // id → resolve fn, so uploads run one at a time
+    this._queued = 0;         // photos still waiting their turn in the upload queue
     this._submitting = false;
     this._done = false;
     this._seq = 0;
@@ -263,7 +266,7 @@ class TechSpotlightSubmit extends HTMLElement {
   _renderThumbs() {
     const wrap = this.shadowRoot.querySelector('[data-thumbs]');
     if (!wrap) return;
-    wrap.innerHTML = Object.keys(this._previews).map(id => `
+    wrap.innerHTML = this._order.filter(id => this._previews[id]).map(id => `
       <div class="photo-row">
         <div class="thumb ${this._pendingPhotos[id] ? 'uploading' : ''}">
           <img src="${esc(this._previews[id])}" alt="photo">
@@ -273,41 +276,67 @@ class TechSpotlightSubmit extends HTMLElement {
       </div>`).join('');
   }
 
-  _onFiles(files, input) {
-    Array.from(files || []).forEach(file => this._addPhoto(file));
-    if (input) input.value = '';
+  // Photos upload ONE AT A TIME. Selecting several at once used to fire a resize + upload for
+  // every file simultaneously, which on a phone connection meant several multi-MB data URLs in
+  // flight together — the reported hangs and "failed to upload" errors. Serialising also fixes
+  // the ordering: uploads finished out of order, and the photo list was built from whichever
+  // came back first, so the captions ended up against the wrong pictures.
+  async _onFiles(files, input) {
+    const picked = Array.from(files || []);
+    if (input) input.value = ''; // let the same file be re-picked after a failure
+    this._queued += picked.length;
+    for (const file of picked) {
+      await this._addPhoto(file);   // eslint-disable-line no-await-in-loop -- serial on purpose
+      this._queued--;
+      this._syncSubmit();
+    }
+    this._queued = 0;
+    this._syncSubmit();
   }
 
+  // Resolves once the upload for this file has come back (or failed) — that's what makes the
+  // queue in _onFiles serial. The Velo bridge answers asynchronously via the photo-result
+  // attribute, so the resolver is parked in _uploadWaiters until _applyPhotoResult sees the id.
   _addPhoto(file) {
-    if (!file || !/^image\//.test(file.type)) return;
+    if (!file || !/^image\//.test(file.type)) return Promise.resolve();
     const id = `p${++this._seq}`;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const max = 1280;
-        let { width, height } = img;
-        if (width > max || height > max) {
-          if (width >= height) { height = Math.round(height * max / width); width = max; }
-          else { width = Math.round(width * max / height); height = max; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        this._previews[id] = dataUrl;
-        this._pendingPhotos[id] = true;
-        this._renderThumbs();
-        this._syncSubmit();
-        this.dispatchEvent(new CustomEvent('upload-photo', { detail: { id, dataUrl }, bubbles: true, composed: true }));
+    this._order.push(id); // pick order — the ONLY thing that decides the final photo order
+    return new Promise((resolve) => {
+      const done = () => resolve();
+      const reader = new FileReader();
+      reader.onerror = () => { this._showMsg('Could not read that photo — please try again.', 'err'); this._dropOrder(id); done(); };
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = () => { this._showMsg('That file is not a readable image.', 'err'); this._dropOrder(id); done(); };
+        img.onload = () => {
+          const max = 1280;
+          let { width, height } = img;
+          if (width > max || height > max) {
+            if (width >= height) { height = Math.round(height * max / width); width = max; }
+            else { width = Math.round(width * max / height); height = max; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          this._previews[id] = dataUrl;
+          this._pendingPhotos[id] = true;
+          this._uploadWaiters[id] = done;
+          this._renderThumbs();
+          this._syncSubmit();
+          this.dispatchEvent(new CustomEvent('upload-photo', { detail: { id, dataUrl }, bubbles: true, composed: true }));
+        };
+        img.src = e.target.result;
       };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
   }
+
+  _dropOrder(id) { this._order = this._order.filter(x => x !== id); }
 
   _removePhoto(id) {
     delete this._previews[id]; delete this._photos[id]; delete this._pendingPhotos[id]; delete this._captions[id];
+    this._dropOrder(id);
     this._renderThumbs(); this._syncSubmit();
   }
 
@@ -317,6 +346,9 @@ class TechSpotlightSubmit extends HTMLElement {
     this._pendingPhotos[r.id] = false;
     if (r.url) this._photos[r.id] = r.url;
     else { this._removePhoto(r.id); this._showMsg('A photo failed to upload — please try again.', 'err'); }
+    // Release the queue so the next photo starts, whether this one succeeded or not.
+    const waiter = this._uploadWaiters[r.id];
+    if (waiter) { delete this._uploadWaiters[r.id]; waiter(); }
     this._renderThumbs(); this._syncSubmit();
   }
 
@@ -328,10 +360,13 @@ class TechSpotlightSubmit extends HTMLElement {
   _syncSubmit() {
     const btn = this.shadowRoot.querySelector('[data-submit]');
     if (!btn) return;
-    const uploading = Object.values(this._pendingPhotos).some(Boolean);
+    const uploading = Object.values(this._pendingPhotos).some(Boolean) || this._queued > 0;
     const needsPick = this._override && !(this._forTech && this._forDate);
     btn.disabled = uploading || this._submitting || needsPick;
-    btn.textContent = uploading ? 'Waiting for photos…'
+    // Photos upload one at a time, so say how many are left — otherwise a batch of five looks
+    // like the form has hung, which is what techs were reporting.
+    const left = this._queued > 0 ? this._queued : Object.values(this._pendingPhotos).filter(Boolean).length;
+    btn.textContent = uploading ? `Uploading photos… (${left} left)`
       : this._submitting ? 'Submitting…'
       : needsPick ? 'Pick a technician and date'
       : this._override ? 'Submit for this technician'
@@ -348,7 +383,8 @@ class TechSpotlightSubmit extends HTMLElement {
     }
     if (Object.values(this._pendingPhotos).some(Boolean)) { this._showMsg('Please wait for photos to finish uploading.', 'err'); return; }
     this._submitting = true; this._syncSubmit();
-    const photos = Object.keys(this._photos).filter(id => this._photos[id])
+    // Pick order, not upload-completion order — this is what keeps captions on the right photos.
+    const photos = this._order.filter(id => this._photos[id])
       .map(id => ({ url: this._photos[id], caption: (this._captions[id] || '').trim() }));
 
     // Override → 'submit-spotlight-for' with an explicit tech + date (admin-gated server-side).
