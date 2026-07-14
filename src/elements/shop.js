@@ -138,6 +138,8 @@ class LocDocShop extends HTMLElement {
     this._adminErr = '';
     this._adminMsg = '';
     this._adminLoaded = false;
+    this._adminPreview = null;   // { points, charged, delta, total } — the pending decision
+    this._adminConfirmed = null; // the prices that preview was computed from
   }
 
   connectedCallback() {
@@ -282,10 +284,23 @@ class LocDocShop extends HTMLElement {
       this._adminLoaded = true;
     } else if (kind === 'review') {
       this._adminOrder = { order: data.order, items: data.items || [], charged: Number(data.charged) || 0 };
+      this._adminPreview = null;   // a freshly opened order has no pending decision
+      this._adminConfirmed = null;
+    } else if (kind === 'preview') {
+      // Nothing has been written yet — this is the decision step.
+      this._adminPreview = {
+        points: Number(data.points) || 0,
+        charged: Number(data.charged) || 0,
+        delta: Number(data.delta) || 0,
+        total: Number(data.total) || 0,
+      };
     } else if (kind === 'confirm') {
       const d = Number(data.delta) || 0;
-      this._adminMsg = `Prices confirmed — ${data.points} pts. `
-        + (d > 0 ? `${d} pts refunded to the member.` : d < 0 ? `${Math.abs(d)} pts charged to the member.` : 'No points change.');
+      this._adminMsg = data.settled
+        ? `Prices confirmed — ${data.points} pts. `
+          + (d > 0 ? `${d} pts refunded to the member.` : `${Math.abs(d)} pts charged to the member.`)
+        : `Prices confirmed — ${data.points} pts. Member's points left as charged (${data.charged} pts).`;
+      this._adminPreview = null;
       this._adminOrder = null;
       this._adminRefresh();
     } else if (kind === 'status') {
@@ -372,16 +387,16 @@ class LocDocShop extends HTMLElement {
 
       <h2 style="margin-top:8px">Line items</h2>
       ${lines || '<div class="empty">No line items found for this order.</div>'}
-      <div class="row" style="margin-top:12px">
-        <button class="btn" data-admin-confirm ${this._adminBusy ? 'disabled' : ''}>
-          ${this._adminBusy ? 'Working…' : 'Confirm pricing'}
-        </button>
-      </div>
-      <div class="m" style="color:var(--gray-400);font-size:12px;margin-top:6px">
-        Confirming re-prices every line and settles the difference against the member's points —
-        debited if higher, credited back if lower. If they can't cover an increase it is refused,
-        not forced negative.
-      </div>
+      ${this._adminPreview ? this._adminDecision() : `
+        <div class="row" style="margin-top:12px">
+          <button class="btn" data-admin-price ${this._adminBusy ? 'disabled' : ''}>
+            ${this._adminBusy ? 'Working…' : 'Price this order'}
+          </button>
+        </div>
+        <div class="m" style="color:var(--gray-400);font-size:12px;margin-top:6px">
+          Re-prices every line from the figures above. Nothing is saved and no points move until you
+          decide on the next screen.
+        </div>`}
 
       <h2 style="margin-top:20px">Fulfilment</h2>
       <div class="row">
@@ -399,21 +414,95 @@ class LocDocShop extends HTMLElement {
       </div>`;
   }
 
+  // The decision step. Points do NOT move on their own: SanMar quotes full price and our provider
+  // discounts 15% on anything $25+, so a confirmed price coming in LOWER is the normal case and we
+  // deliberately keep the difference (it covers the stock room). The admin only adjusts when they
+  // choose to — typically when the price came in HIGHER, or when it's so much lower that it looks
+  // like a typo. So "keep the points" is the primary action and adjusting is the deliberate one.
+  _adminDecision() {
+    const { points, charged, delta } = this._adminPreview;
+    const over = delta > 0;   // member paid more than the order really costs
+    const under = delta < 0;  // member paid less
+    const n = Math.abs(delta);
+
+    const verdict = !delta
+      ? `Confirmed price matches what the member was charged (${charged} pts). Nothing to decide.`
+      : over
+        ? `Confirmed price is <b>${n} pts LOWER</b> than the member was charged (${charged} → ${points} pts).`
+        : `Confirmed price is <b>${n} pts HIGHER</b> than the member was charged (${charged} → ${points} pts).`;
+
+    const guidance = !delta ? ''
+      : over
+        ? `Normally you keep the points as charged — the difference covers the stock room. Only
+           refund if it looks wrong (e.g. a stray zero in the estimate).`
+        : `You can charge the member the extra ${n} pts, or absorb it and leave their points alone.`;
+
+    return `
+      <div class="card" style="margin-top:14px;border-color:var(--primary)">
+        <h2>Confirm pricing</h2>
+        <div class="m" style="font-size:14px;margin-bottom:6px">${verdict}</div>
+        ${guidance ? `<div class="m" style="color:var(--gray-400);font-size:12px;margin-bottom:12px">${guidance}</div>` : ''}
+        <div class="row">
+          <button class="btn" data-admin-keep ${this._adminBusy ? 'disabled' : ''}>
+            ${delta ? 'Confirm, keep points as charged' : 'Confirm'}
+          </button>
+          ${delta ? `
+          <button class="btn" data-admin-settle ${this._adminBusy ? 'disabled' : ''}
+            style="background:var(--gray-600)">
+            Confirm &amp; ${over ? `refund ${n} pts` : `charge ${n} pts`}
+          </button>` : ''}
+          <button class="btn" data-admin-redo style="background:transparent;color:var(--gray-600)">
+            ← Edit prices
+          </button>
+        </div>
+      </div>`;
+  }
+
+  _confirmedFrom(panel) {
+    return [...panel.querySelectorAll('[data-price]')].map((i) => ({
+      _id: i.getAttribute('data-price'),
+      unitPrice: Number(i.value) || 0,
+    }));
+  }
+
   _wireAdmin(panel) {
     panel.querySelectorAll('[data-review]').forEach((b) =>
       b.addEventListener('click', () => this._adminSend('admin-review', { orderId: b.getAttribute('data-review') })));
 
     const back = panel.querySelector('[data-admin-back]');
-    if (back) back.addEventListener('click', () => { this._adminOrder = null; this._adminErr = ''; this._renderPanel(); });
-
-    const confirm = panel.querySelector('[data-admin-confirm]');
-    if (confirm) confirm.addEventListener('click', () => {
-      const confirmed = [...panel.querySelectorAll('[data-price]')].map((i) => ({
-        _id: i.getAttribute('data-price'),
-        unitPrice: Number(i.value) || 0,
-      }));
-      this._adminSend('admin-confirm', { orderId: this._adminOrder.order._id, confirmed });
+    if (back) back.addEventListener('click', () => {
+      this._adminOrder = null;
+      this._adminPreview = null;
+      this._adminConfirmed = null;
+      this._adminErr = '';
+      this._renderPanel();
     });
+
+    // Step 1: price it (writes nothing) and show the decision.
+    const price = panel.querySelector('[data-admin-price]');
+    if (price) price.addEventListener('click', () => {
+      // Remember the exact prices we priced, so the confirm sends the same figures the admin was
+      // shown — the inputs are still on screen, but this makes the two steps agree by construction.
+      this._adminConfirmed = this._confirmedFrom(panel);
+      this._adminSend('admin-preview', {
+        orderId: this._adminOrder.order._id,
+        confirmed: this._adminConfirmed,
+      });
+    });
+
+    // Step 2: the decision. Same prices either way — `settle` is the only difference.
+    const send = (settle) => this._adminSend('admin-confirm', {
+      orderId: this._adminOrder.order._id,
+      confirmed: this._adminConfirmed || this._confirmedFrom(panel),
+      settle,
+    });
+    const keep = panel.querySelector('[data-admin-keep]');
+    if (keep) keep.addEventListener('click', () => send(false));
+    const settle = panel.querySelector('[data-admin-settle]');
+    if (settle) settle.addEventListener('click', () => send(true));
+
+    const redo = panel.querySelector('[data-admin-redo]');
+    if (redo) redo.addEventListener('click', () => { this._adminPreview = null; this._renderPanel(); });
 
     const setStatus = panel.querySelector('[data-admin-setstatus]');
     if (setStatus) setStatus.addEventListener('click', () => {
