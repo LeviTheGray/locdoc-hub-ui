@@ -187,6 +187,11 @@ class ResourcesHub extends HTMLElement {
 
   connectedCallback() {
     ensureMaterialSymbols();
+    // Best-effort only — on Wix this usually finds NOTHING. Wix rewrites the page URL during its
+    // own routing and drops the query string before this element mounts, which is why ?tag= links
+    // kept landing on the unfiltered list. The authoritative source is the `deepLink` the page code
+    // reads from wixLocation.query at onReady and passes via init-data (see _applyData). This read
+    // still matters for standalone/non-Wix use, where the URL is all there is.
     try {
       const params = new URLSearchParams(window.location.search);
       this._deepDoc = params.get('doc');
@@ -209,6 +214,13 @@ class ResourcesHub extends HTMLElement {
     if (Array.isArray(parsed.resources) && parsed.resources.length) {
       this._resources = parsed.resources;
     }
+    // Deep-link params from the page code (wixLocation.query, captured before Wix strips the query
+    // string). These WIN over whatever connectedCallback managed to scrape off window.location.
+    const dl = parsed.deepLink || {};
+    if (dl.tag) this._deepTag = dl.tag;
+    if (dl.doc) this._deepDoc = dl.doc;
+    if (dl.q)   this._q = String(dl.q).trim().toLowerCase();
+
     // Resolve ?tag= against the categories the live data actually has. Only reset to 'All' when
     // there's no tag to honour — otherwise the incoming CMS data would clobber the deep-link.
     this._category = this._resolveTag() || 'All';
