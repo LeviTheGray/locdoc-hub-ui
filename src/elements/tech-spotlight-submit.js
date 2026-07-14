@@ -104,6 +104,7 @@ class TechSpotlightSubmit extends HTMLElement {
     // Admin override: file a spotlight FOR a tech on ANY date, bypassing the schedule gate.
     this._admin = false;        // from init-data; re-checked server-side on submit
     this._techs = [];           // [{ name, email }] roster for the picker
+    this._upcoming = [];        // [{ date, tech }] agenda assignments AS TYPED — shown when blocked
     this._override = false;     // is the override form active?
     this._forTech = '';         // picked tech's email
     this._forDate = '';         // picked ISO date
@@ -130,6 +131,7 @@ class TechSpotlightSubmit extends HTMLElement {
     this._scheduledDate = p.scheduledDate || null;
     this._admin = Boolean(p.admin);
     this._techs = Array.isArray(p.techs) ? p.techs : [];
+    this._upcoming = Array.isArray(p.upcoming) ? p.upcoming : [];
     this._error = p.error || null;
     this._loaded = true;
     // An admin who isn't scheduled has nothing to do here EXCEPT override, so open it for them
@@ -193,11 +195,33 @@ class TechSpotlightSubmit extends HTMLElement {
     // the override instead of a dead end (that's the whole point of it).
     if (!this._scheduledDate && !this._override) {
       const who = this._user && this._user.name ? esc(this._user.name) : '';
+      // The schedule match is an EXACT compare between the name on your Employees record and the
+      // name typed into the Weekly Agenda, so "Mike Smith" vs "Michael Smith" blocks you with no
+      // clue why. Show BOTH sides so the mismatch is obvious and a manager can just fix the typo.
+      // NB: don't reuse .who/.row here — those are flex and would lay the rows out side by side.
+      const agenda = this._upcoming.length ? `
+        <div style="display:block;text-align:left;margin-top:16px;padding:14px 16px;
+                    background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px">
+          <div style="font-size:12px;font-weight:700;color:var(--gray-600);margin-bottom:8px">
+            Upcoming spotlights on the Weekly Agenda
+          </div>
+          ${this._upcoming.map(u => `
+            <div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;
+                        padding:6px 0;border-top:1px solid var(--gray-200)">
+              <span style="color:var(--gray-600)">${esc(this._fmtDate(u.date))}</span>
+              <span style="font-weight:700">${esc(u.tech)}</span>
+            </div>`).join('')}
+          ${who ? `<p style="font-size:12px;color:var(--gray-400);margin-top:12px;line-height:1.5">
+            Your name on file is <b>${who}</b>. If one of the names above is <i>you</i> but spelled
+            differently, that's why this form is locked — ask your manager to make the Weekly Agenda
+            match <b>${who}</b> exactly.</p>` : ''}
+        </div>` : '';
+
       main.innerHTML = `<div class="notice"><div class="ico">🗓️</div>
         <h2>You're not scheduled yet</h2>
         <p>Tech Spotlights run on a schedule set in the Weekly Agenda. When your manager adds you
            to an upcoming Wednesday, this form will open up for you.</p>
-        ${who ? `<p style="font-size:12px;color:var(--gray-400)">We looked for an upcoming spotlight assigned to <b>${who}</b>. If that name doesn't match the Weekly Agenda exactly, ask your manager to fix it.</p>` : ''}
+        ${agenda || (who ? `<p style="font-size:12px;color:var(--gray-400)">We looked for an upcoming spotlight assigned to <b>${who}</b>. If that name doesn't match the Weekly Agenda exactly, ask your manager to fix it.</p>` : '')}
         ${this._admin ? `<button class="link" data-override-toggle>Submit for a technician (admin) →</button>` : ''}
         <button class="link" data-nav>← Back to the Hub</button></div>`;
       return;
@@ -256,6 +280,12 @@ class TechSpotlightSubmit extends HTMLElement {
   _saveDraft() {
     const v = (id) => (this._$(id) ? this._$(id).value : '');
     this._draft = { title: v('title'), problem: v('problem'), solution: v('solution') };
+  }
+
+  _fmtDate(iso) {
+    const d = new Date((iso || '') + 'T00:00:00');
+    return isNaN(d) ? String(iso || '')
+      : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   }
 
   _fmtSchedDate() {
