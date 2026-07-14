@@ -196,7 +196,15 @@ class LocDocShop extends HTMLElement {
 
   _addLine(line) {
     const problem = validateLine(line);
-    if (problem) { this._err = problem; this._render(); return; }
+    if (problem) {
+      // _render() rebuilds the form from scratch, which used to wipe everything the member had
+      // typed — so a missing size meant retyping the item number, price and the rest. Put their
+      // values back so they only have to fix the one field that was wrong.
+      this._err = problem;
+      this._render();
+      this._fillForm(line);
+      return;
+    }
 
     // Editing replaces in place. The old shop DELETED the line and refilled the form, so navigating
     // away mid-edit silently lost it.
