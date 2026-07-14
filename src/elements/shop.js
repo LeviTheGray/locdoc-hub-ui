@@ -377,35 +377,31 @@ class LocDocShop extends HTMLElement {
       const price = isSanmar ? it.clothingPrice : it.unitPrice;
       const label = it.itemNumber || it.name || it.productName || 'Item';
       const bits = [it.size || it.hatSize || it.pantSize, it.color, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
-      const p = this._adminPriceLine(it);
-      const fee = (Number(p.logoPricePerUnit) || 0) + (Number(p.placementPricePerUnit) || 0);
+      // No line total here: with a single-line order it would just repeat the order total. The
+      // itemised fees and the summary below carry that information without saying it twice.
       return `
         <div class="line">
           <div class="t">
             <b>${this._esc(label)}</b>
             <span>${this._esc(bits.join(' · '))}</span>
-            ${fee ? `<span data-fee-for="${this._escA(it._id)}">${this._feeNote(it, fee)}</span>` : ''}
           </div>
           <label style="display:flex;align-items:center;gap:6px">
-            <span style="color:var(--gray-400);font-size:12px">Unit $</span>
+            <span style="color:var(--gray-400);font-size:12px">Unit price $</span>
             <input type="number" step="0.01" min="0" style="width:90px"
               data-price="${this._escA(it._id)}" value="${Number(price) || 0}">
           </label>
-          <div class="amt" data-line-total="${this._escA(it._id)}" style="width:80px;text-align:right">
-            $${p.total.toFixed(2)}
-          </div>
         </div>`;
     }).join('');
 
-    // Order total + points, live as the admin edits. This is the number that actually gets confirmed.
-    const orderTotal = items.reduce((s, it) => s + this._adminPriceLine(it).total, 0);
+    // Everything below is derived and updates live as the admin edits a unit price.
     const totals = `
-      <div class="totals" style="margin-top:14px">
+      <div data-admin-fees>${this._adminFeesBlock()}</div>
+      <div class="totals" style="margin-top:12px">
         <span>Order total</span>
-        <span class="big" data-order-total>$${orderTotal.toFixed(2)}</span>
+        <span class="big" data-order-total></span>
       </div>
       <div class="totals" style="font-weight:600;font-size:13px;color:var(--gray-600)">
-        <span>Points</span><span data-order-points>${Math.round(orderTotal)} pts</span>
+        <span>Points</span><span data-order-points></span>
       </div>
       <div class="totals" style="font-weight:600;font-size:13px;color:var(--gray-400)">
         <span>Member was charged</span><span>${charged} pts</span>
@@ -501,33 +497,72 @@ class LocDocShop extends HTMLElement {
       </div>`;
   }
 
-  // "+ $3.50 hat placement fee" — name the fee so the admin knows where the extra came from.
-  _feeNote(it, fee) {
-    const what = it.isHat ? 'hat placement fee' : 'logo fee';
-    return `+ $${fee.toFixed(2)} ${what} per unit`;
+  /**
+   * The order's money, priced exactly as the backend will price it.
+   * `panel` (optional) → read the unit prices currently typed into the boxes instead of the stored
+   * ones, so the breakdown tracks what the admin is doing.
+   */
+  _adminMoney(panel) {
+    const { items } = this._adminOrder;
+    const fees = [];   // one row per fee, per line
+    let total = 0;
+    let feeTotal = 0;
+
+    for (const it of items) {
+      const input = panel ? panel.querySelector(`[data-price="${it._id}"]`) : null;
+      const p = this._adminPriceLine(it, input ? input.value : undefined);
+      const qty = Number(p.quantity) || 1;
+      const label = it.itemNumber || it.name || it.productName || 'Item';
+
+      const each = [
+        { amount: Number(p.placementPricePerUnit) || 0, what: 'Hat logo placement' },
+        { amount: Number(p.logoPricePerUnit) || 0, what: 'Garment logo' },
+      ];
+      for (const f of each) {
+        if (!f.amount) continue;
+        const sum = f.amount * qty;
+        feeTotal += sum;
+        fees.push({
+          // "Hat logo placement (Front) — 112PL · $3.50 × 1"
+          desc: `${f.what}${it.logoPlacement ? ` (${it.logoPlacement})` : ''} — ${label}`,
+          detail: `$${f.amount.toFixed(2)} × ${qty}`,
+          sum,
+        });
+      }
+      total += p.total;
+    }
+    return { fees, feeTotal, total, points: Math.round(total) };
   }
 
-  // Recompute the line totals and the order total as the admin types, WITHOUT re-rendering (that
-  // would blow away the input they're in the middle of editing).
+  _adminFeesBlock(panel) {
+    const { fees, feeTotal } = this._adminMoney(panel);
+    if (!fees.length) return '';
+    return `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--gray-100)">
+        <div style="font-size:12px;font-weight:700;color:var(--gray-600);margin-bottom:6px">Fees</div>
+        ${fees.map((f) => `
+          <div class="totals" style="font-weight:400;font-size:13px;color:var(--gray-600);margin-top:4px">
+            <span>${this._esc(f.desc)} <span style="color:var(--gray-400)">${this._esc(f.detail)}</span></span>
+            <span>$${f.sum.toFixed(2)}</span>
+          </div>`).join('')}
+        <div class="totals" style="font-size:13px;margin-top:6px">
+          <span>Total fees</span><span>$${feeTotal.toFixed(2)}</span>
+        </div>
+      </div>`;
+  }
+
+  // Recompute the fees and totals as the admin types. Deliberately does NOT re-render the whole
+  // panel — that would blow away the input they're in the middle of editing.
   _adminSyncTotals(panel) {
-    const { items } = this._adminOrder;
-    let total = 0;
-    for (const it of items) {
-      const input = panel.querySelector(`[data-price="${it._id}"]`);
-      const p = this._adminPriceLine(it, input ? input.value : undefined);
-      total += p.total;
+    const { total, points } = this._adminMoney(panel);
 
-      const cell = panel.querySelector(`[data-line-total="${it._id}"]`);
-      if (cell) cell.textContent = `$${p.total.toFixed(2)}`;
+    const feesEl = panel.querySelector('[data-admin-fees]');
+    if (feesEl) feesEl.innerHTML = this._adminFeesBlock(panel);
 
-      const fee = (Number(p.logoPricePerUnit) || 0) + (Number(p.placementPricePerUnit) || 0);
-      const note = panel.querySelector(`[data-fee-for="${it._id}"]`);
-      if (note) note.textContent = fee ? this._feeNote(it, fee) : '';
-    }
     const t = panel.querySelector('[data-order-total]');
     if (t) t.textContent = `$${total.toFixed(2)}`;
     const pts = panel.querySelector('[data-order-points]');
-    if (pts) pts.textContent = `${Math.round(total)} pts`;
+    if (pts) pts.textContent = `${points} pts`;
   }
 
   _confirmedFrom(panel) {
@@ -541,9 +576,12 @@ class LocDocShop extends HTMLElement {
     panel.querySelectorAll('[data-review]').forEach((b) =>
       b.addEventListener('click', () => this._adminSend('admin-review', { orderId: b.getAttribute('data-review') })));
 
-    // Live totals while editing a price.
-    panel.querySelectorAll('[data-price]').forEach((i) =>
-      i.addEventListener('input', () => this._adminSyncTotals(panel)));
+    // Live totals while editing a price. Prime them once so the breakdown is filled in on open.
+    if (this._adminOrder && panel.querySelector('[data-order-total]')) {
+      this._adminSyncTotals(panel);
+      panel.querySelectorAll('[data-price]').forEach((i) =>
+        i.addEventListener('input', () => this._adminSyncTotals(panel)));
+    }
 
     const back = panel.querySelector('[data-admin-back]');
     if (back) back.addEventListener('click', () => {
