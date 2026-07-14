@@ -43,6 +43,8 @@ const STYLES = `
 
   .main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; }
   @media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+  /* Admin has no cart, so don't reserve the 340px column for it — the review screen wants the room. */
+  .main.no-cart { grid-template-columns: 1fr; }
 
   .tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
   .tab { border: 1.5px solid var(--gray-200); background: #fff; color: var(--gray-600); border-radius: 999px; padding: 8px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -106,7 +108,7 @@ const STYLES = `
 `;
 
 class LocDocShop extends HTMLElement {
-  static get observedAttributes() { return ['init-data', 'submit-result', 'quote-result']; }
+  static get observedAttributes() { return ['init-data', 'submit-result', 'quote-result', 'admin-result']; }
 
   constructor() {
     super();
@@ -125,6 +127,17 @@ class LocDocShop extends HTMLElement {
     this._loading = true;
     this._q = 0;            // quote nonce
     this._serverTotal = null;
+
+    // ---- Admin tab. Shown only when init-data says isAdmin; every backend method re-checks,
+    // so this is an affordance, not a gate.
+    this._isAdmin = false;
+    this._adminOrders = [];   // the queue
+    this._adminOrder = null;  // { order, items, charged } — the order open for review
+    this._adminStatuses = [];
+    this._adminBusy = false;
+    this._adminErr = '';
+    this._adminMsg = '';
+    this._adminLoaded = false;
   }
 
   connectedCallback() {
@@ -144,8 +157,11 @@ class LocDocShop extends HTMLElement {
       this._points = Number(data.points) || 0;
       this._catalog = Array.isArray(data.catalog) ? data.catalog : [];
       this._orders = Array.isArray(data.orders) ? data.orders : [];
+      this._isAdmin = Boolean(data.isAdmin);
       this._render();
     }
+
+    if (name === 'admin-result') this._applyAdminResult(data);
 
     if (name === 'quote-result') {
       // Ignore a stale quote that lands after a newer one.
@@ -237,6 +253,184 @@ class LocDocShop extends HTMLElement {
     this.dispatchEvent(new CustomEvent('submit-cart', { detail: this._cart, bubbles: true, composed: true }));
   }
 
+  // ---- admin ---------------------------------------------------------------
+
+  // Every admin action goes out as an event and comes back through the single `admin-result`
+  // attribute, tagged with `kind` so we know which request it answers.
+  _adminSend(kind, detail) {
+    this._adminBusy = true;
+    this._adminErr = '';
+    this.dispatchEvent(new CustomEvent(kind, { detail, bubbles: true, composed: true }));
+    this._renderPanel();
+  }
+
+  _applyAdminResult(data) {
+    this._adminBusy = false;
+    const kind = data.kind || '';
+
+    if (data.ok === false) {
+      // A refused confirm is the interesting case: the backend rejects rather than pushing the
+      // member negative, and its message says how many points short they are. Surface it verbatim.
+      this._adminErr = data.error || 'That admin action failed.';
+      this._renderPanel();
+      return;
+    }
+
+    if (kind === 'list') {
+      this._adminOrders = Array.isArray(data.orders) ? data.orders : [];
+      this._adminStatuses = Array.isArray(data.statuses) ? data.statuses : [];
+      this._adminLoaded = true;
+    } else if (kind === 'review') {
+      this._adminOrder = { order: data.order, items: data.items || [], charged: Number(data.charged) || 0 };
+    } else if (kind === 'confirm') {
+      const d = Number(data.delta) || 0;
+      this._adminMsg = `Prices confirmed — ${data.points} pts. `
+        + (d > 0 ? `${d} pts refunded to the member.` : d < 0 ? `${Math.abs(d)} pts charged to the member.` : 'No points change.');
+      this._adminOrder = null;
+      this._adminRefresh();
+    } else if (kind === 'status') {
+      this._adminMsg = `Status set to ${data.status}.`;
+      this._adminOrder = null;
+      this._adminRefresh();
+    } else if (kind === 'cancel') {
+      this._adminMsg = `Order cancelled — ${data.refunded} pts refunded.`;
+      this._adminOrder = null;
+      this._adminRefresh();
+    }
+    this._renderPanel();
+  }
+
+  _adminRefresh() { this._adminSend('admin-list', {}); }
+
+  _adminPanel() {
+    if (this._adminOrder) return this._adminReview();
+
+    if (!this._adminLoaded && !this._adminBusy) { this._adminRefresh(); }
+
+    const rows = this._adminOrders.map((o) => `
+      <div class="ord">
+        <div class="h">
+          <b>${this._esc(o.orderNumber || 'Order')}</b>
+          <span class="st">${this._esc(o.status)}</span>
+        </div>
+        <div class="m">
+          ${this._esc(o.memberName || o.memberEmail || '')} · ${this._esc(o.shopSource)} ·
+          ${o.charged} pts${o.pricingConfirmed ? '' : ' (estimated)'} · ${this._fmtDate(o.submittedDate)}
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" data-review="${this._escA(o._id)}">Review</button>
+        </div>
+      </div>`).join('');
+
+    return `
+      <h2>Order queue</h2>
+      ${this._adminMsg ? `<div class="ok">${this._esc(this._adminMsg)}</div>` : ''}
+      ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
+      ${this._adminBusy && !this._adminLoaded ? '<div class="empty">Loading orders…</div>' : ''}
+      ${this._adminLoaded && !this._adminOrders.length ? '<div class="empty">No open orders.</div>' : rows}`;
+  }
+
+  _adminReview() {
+    const { order, items, charged } = this._adminOrder;
+    const isSanmar = String(order.shopSource || '').toLowerCase() === 'sanmar';
+
+    // SanMar lines price off clothingPrice (logo/placement fees are added on top by the pricing
+    // module); everything else prices off unitPrice. Edit whichever this source actually uses.
+    const lines = items.map((it) => {
+      const price = isSanmar ? it.clothingPrice : it.unitPrice;
+      const label = it.itemNumber || it.name || it.productName || 'Item';
+      const bits = [it.size || it.hatSize || it.pantSize, it.color, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
+      return `
+        <div class="line">
+          <div class="t">
+            <b>${this._esc(label)}</b>
+            <span>${this._esc(bits.join(' · '))}</span>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--gray-400);font-size:12px">Unit $</span>
+            <input type="number" step="0.01" min="0" style="width:90px"
+              data-price="${this._escA(it._id)}" value="${Number(price) || 0}">
+          </label>
+        </div>`;
+    }).join('');
+
+    const statusOpts = this._adminStatuses
+      .map((s) => `<option value="${this._escA(s)}" ${s === order.status ? 'selected' : ''}>${this._esc(s)}</option>`)
+      .join('');
+
+    return `
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <h2>${this._esc(order.orderNumber || 'Order')} · ${this._esc(order.shopSource)}</h2>
+        <button class="btn" data-admin-back>← Back to queue</button>
+      </div>
+      <div class="m" style="color:var(--gray-400);font-size:13px;margin-bottom:12px">
+        ${this._esc(order.memberName || order.email || '')} · status <b>${this._esc(order.status)}</b> ·
+        charged <b>${charged} pts</b>${order.pricingConfirmed ? '' : ' (member\'s estimate)'}
+      </div>
+
+      ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
+
+      <h2 style="margin-top:8px">Line items</h2>
+      ${lines || '<div class="empty">No line items found for this order.</div>'}
+      <div class="row" style="margin-top:12px">
+        <button class="btn" data-admin-confirm ${this._adminBusy ? 'disabled' : ''}>
+          ${this._adminBusy ? 'Working…' : 'Confirm pricing'}
+        </button>
+      </div>
+      <div class="m" style="color:var(--gray-400);font-size:12px;margin-top:6px">
+        Confirming re-prices every line and settles the difference against the member's points —
+        debited if higher, credited back if lower. If they can't cover an increase it is refused,
+        not forced negative.
+      </div>
+
+      <h2 style="margin-top:20px">Fulfilment</h2>
+      <div class="row">
+        <select data-admin-status>${statusOpts}</select>
+        <button class="btn" data-admin-setstatus ${this._adminBusy ? 'disabled' : ''}>Set status</button>
+      </div>
+
+      <h2 style="margin-top:20px">Cancel</h2>
+      <div class="row">
+        <input type="text" data-admin-reason placeholder="Reason (optional)" style="flex:1">
+        <button class="btn" data-admin-cancel ${this._adminBusy ? 'disabled' : ''}>Cancel &amp; refund</button>
+      </div>
+      <div class="m" style="color:var(--gray-400);font-size:12px;margin-top:6px">
+        Refunds all ${charged} pts to the member.
+      </div>`;
+  }
+
+  _wireAdmin(panel) {
+    panel.querySelectorAll('[data-review]').forEach((b) =>
+      b.addEventListener('click', () => this._adminSend('admin-review', { orderId: b.getAttribute('data-review') })));
+
+    const back = panel.querySelector('[data-admin-back]');
+    if (back) back.addEventListener('click', () => { this._adminOrder = null; this._adminErr = ''; this._renderPanel(); });
+
+    const confirm = panel.querySelector('[data-admin-confirm]');
+    if (confirm) confirm.addEventListener('click', () => {
+      const confirmed = [...panel.querySelectorAll('[data-price]')].map((i) => ({
+        _id: i.getAttribute('data-price'),
+        unitPrice: Number(i.value) || 0,
+      }));
+      this._adminSend('admin-confirm', { orderId: this._adminOrder.order._id, confirmed });
+    });
+
+    const setStatus = panel.querySelector('[data-admin-setstatus]');
+    if (setStatus) setStatus.addEventListener('click', () => {
+      const sel = panel.querySelector('[data-admin-status]');
+      this._adminSend('admin-status', { orderId: this._adminOrder.order._id, status: sel ? sel.value : '' });
+    });
+
+    const cancel = panel.querySelector('[data-admin-cancel]');
+    if (cancel) cancel.addEventListener('click', () => {
+      const reason = panel.querySelector('[data-admin-reason]');
+      this._adminSend('admin-cancel', {
+        orderId: this._adminOrder.order._id,
+        reason: reason ? reason.value.trim() : '',
+      });
+    });
+  }
+
   // ---- render --------------------------------------------------------------
 
   _render() {
@@ -266,9 +460,11 @@ class LocDocShop extends HTMLElement {
     }
 
     r.querySelector('[data-pts]').textContent = this._loading ? '…' : `${this._points} pts`;
-    r.querySelector('[data-tabs]').innerHTML = [
-      ['uniform', 'Uniform'], ['sanmar', 'SanMar Custom'], ['amazon', 'Amazon'],
-    ].map(([k, label]) => `<button class="tab${this._tab === k ? ' active' : ''}" data-tab="${k}">${label}</button>`).join('');
+    r.querySelector('.main').classList.toggle('no-cart', this._tab === 'admin');
+    const tabs = [['uniform', 'Uniform'], ['sanmar', 'SanMar Custom'], ['amazon', 'Amazon']];
+    if (this._isAdmin) tabs.push(['admin', 'Admin']);
+    r.querySelector('[data-tabs]').innerHTML = tabs
+      .map(([k, label]) => `<button class="tab${this._tab === k ? ' active' : ''}" data-tab="${k}">${label}</button>`).join('');
 
     this._renderPanel();
     this._renderCart();
@@ -277,6 +473,13 @@ class LocDocShop extends HTMLElement {
   _renderPanel() {
     const panel = this.shadowRoot.querySelector('[data-panel]');
     if (this._loading) { panel.innerHTML = `<div class="card"><div class="empty">Loading…</div></div>`; return; }
+
+    // Admin is a different screen, not another order form — it has no cart and no Add button.
+    if (this._tab === 'admin') {
+      panel.innerHTML = `<div class="card">${this._adminPanel()}</div>`;
+      this._wireAdmin(panel);
+      return;
+    }
 
     panel.innerHTML = `<div class="card">${this._form()}</div>`;
 
@@ -488,6 +691,10 @@ class LocDocShop extends HTMLElement {
   _renderCart() {
     const side = this.shadowRoot.querySelector('[data-side]');
     if (!side) return;
+
+    // The Admin tab is reviewing someone else's order — showing your own cart beside it is noise.
+    if (this._tab === 'admin') { side.innerHTML = ''; return; }
+
     const short = this._short > 0 && this._cart.length;
 
     side.innerHTML = `
