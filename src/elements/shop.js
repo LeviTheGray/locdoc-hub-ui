@@ -31,7 +31,7 @@ import { cartTotal, pointsForCart, priceLine, validateLine } from './shop-pricin
 
 const HAT_PLACEMENTS = ['Front', 'Front Center', 'Left Side', 'Right Side', 'Back'];
 const LOGO_OPTIONS = ['None', 'LocDoc', 'LocDoc + Name'];
-const LOGO_COLORS = ['White', 'Black', 'Green', 'Grey'];
+const LOGO_COLORS = ['White', 'Black', 'Green', 'Grey', 'Tone on Tone'];
 
 const STYLES = `
   ${TOKENS}
