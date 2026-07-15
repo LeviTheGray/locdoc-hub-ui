@@ -27,10 +27,16 @@
  */
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
-import { cartTotal, pointsForCart, priceLine, validateLine, ourUnitPrice, BULK_DISCOUNT_THRESHOLD } from './shop-pricing.js';
+import {
+  cartTotal, pointsForCart, priceLine, validateLine, ourUnitPrice,
+  BULK_DISCOUNT_THRESHOLD, STATUS, displayStatus,
+} from './shop-pricing.js';
 
 const HAT_PLACEMENTS = ['Front', 'Front Center', 'Left Side', 'Right Side', 'Back'];
-const LOGO_OPTIONS = ['None', 'LocDoc', 'LocDoc + Name'];
+// The real logos anyone can pick. "None" (a blank garment) is added in front of these ONLY for
+// Operations — see _canSelectNoLogo / NO_LOGO_OPTION.
+const LOGO_OPTIONS = ['Target', 'Stacked', 'The Lab', 'OMS'];
+const NO_LOGO_OPTION = 'None';
 const LOGO_COLORS = ['White', 'Black', 'Green', 'Grey', 'Tone on Tone'];
 
 const STYLES = `
@@ -61,8 +67,8 @@ const STYLES = `
   .checks { display: flex; gap: 18px; margin: 14px 0; }
   .chk { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--gray-600); cursor: pointer; }
   .chk input { width: auto; }
-  .chk.disabled { opacity: .4; cursor: not-allowed; }
-  .chk.disabled input { cursor: not-allowed; }
+  .group-disabled { opacity: .45; }
+  input:disabled, select:disabled { background: var(--gray-100); cursor: not-allowed; }
   .sub { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--gray-200); }
 
   .preview { margin-top: 14px; font-size: 13px; color: var(--gray-600); }
@@ -129,6 +135,7 @@ class LocDocShop extends HTMLElement {
     this._loading = true;
     this._q = 0;            // quote nonce
     this._serverTotal = null;
+    this._canSelectNoLogo = false; // Operations only — set from init-data
 
     // ---- Admin tab. Shown only when init-data says isAdmin; every backend method re-checks,
     // so this is an affordance, not a gate.
@@ -136,6 +143,7 @@ class LocDocShop extends HTMLElement {
     this._adminOrders = [];   // the queue
     this._adminOrder = null;  // { order, items, charged } — the order open for review
     this._adminStatuses = [];
+    this._adminFilter = 'open'; // queue status filter: 'open' | 'all' | a specific status
     this._adminBusy = false;
     this._adminErr = '';
     this._adminMsg = '';
@@ -162,6 +170,7 @@ class LocDocShop extends HTMLElement {
       this._catalog = Array.isArray(data.catalog) ? data.catalog : [];
       this._orders = Array.isArray(data.orders) ? data.orders : [];
       this._isAdmin = Boolean(data.isAdmin);
+      this._canSelectNoLogo = Boolean(data.canSelectNoLogo);
       this._render();
     }
 
@@ -332,11 +341,12 @@ class LocDocShop extends HTMLElement {
 
     if (!this._adminLoaded && !this._adminBusy) { this._adminRefresh(); }
 
-    const rows = this._adminOrders.map((o) => `
+    const shown = this._adminFilteredOrders();
+    const rows = shown.map((o) => `
       <div class="ord">
         <div class="h">
           <b>${this._esc(o.orderNumber || 'Order')}</b>
-          <span class="st">${this._esc(o.status)}</span>
+          <span class="st">${this._esc(displayStatus(o.status))}</span>
         </div>
         <div class="m">
           ${this._esc(o.memberName || o.memberEmail || '')} · ${this._esc(o.shopSource)} ·
@@ -347,12 +357,39 @@ class LocDocShop extends HTMLElement {
         </div>
       </div>`).join('');
 
+    // Filter options: Open (default, hides Received) · All · then each individual status. Cancelled
+    // is appended because it isn't a settable status but orders can still be in it.
+    const statusOpts = [...this._adminStatuses.filter((s) => s !== STATUS.ARCHIVED), STATUS.CANCELLED];
+    const filterChoices = [['open', 'Open — not received'], ['all', 'All statuses'],
+      ...statusOpts.map((s) => [s, s])];
+    const filterUI = `
+      <div class="cl-toolbar" style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <label style="font-size:12px;font-weight:600;color:var(--gray-600)">Status</label>
+        <select data-admin-filter style="width:auto;min-width:180px">
+          ${filterChoices.map(([v, l]) =>
+            `<option value="${this._escA(v)}"${this._adminFilter === v ? ' selected' : ''}>${this._esc(l)}</option>`).join('')}
+        </select>
+      </div>`;
+
     return `
       <h2>Order queue</h2>
       ${this._adminMsg ? `<div class="ok">${this._esc(this._adminMsg)}</div>` : ''}
       ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
+      ${this._adminLoaded ? filterUI : ''}
       ${this._adminBusy && !this._adminLoaded ? '<div class="empty">Loading orders…</div>' : ''}
-      ${this._adminLoaded && !this._adminOrders.length ? '<div class="empty">No open orders.</div>' : rows}`;
+      ${this._adminLoaded && !shown.length ? '<div class="empty">No orders match this filter.</div>' : rows}`;
+  }
+
+  // The queue, narrowed by the status filter. "Completed" is treated as "Received" (displayStatus),
+  // so the default "open" view hides both, and selecting Received shows both.
+  _adminFilteredOrders() {
+    const f = this._adminFilter || 'open';
+    return this._adminOrders.filter((o) => {
+      const d = displayStatus(o.status);
+      if (f === 'all') return true;
+      if (f === 'open') return d !== STATUS.RECEIVED;
+      return d === f;
+    });
   }
 
   // The `source` the pricing module expects, from the order header's shopSource.
@@ -386,7 +423,11 @@ class LocDocShop extends HTMLElement {
     const lines = items.map((it) => {
       const price = isSanmar ? it.clothingPrice : it.unitPrice;
       const label = it.itemNumber || it.name || it.productName || 'Item';
-      const bits = [it.size || it.hatSize || it.pantSize, it.color, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
+      // Logo + logo color + placement were missing here — an admin couldn't see what to embroider.
+      const logoBit = it.logo
+        ? `Logo: ${it.logo}${it.logoColor ? ` (${it.logoColor})` : ''}${it.logoPlacement ? ` · ${it.logoPlacement}` : ''}`
+        : '';
+      const bits = [it.size || it.hatSize || it.pantSize, it.color, logoBit, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
       // No line total here: with a single-line order it would just repeat the order total. The
       // itemised fees and the summary below carry that information without saying it twice.
       return `
@@ -422,7 +463,7 @@ class LocDocShop extends HTMLElement {
       </div>`;
 
     const statusOpts = this._adminStatuses
-      .map((s) => `<option value="${this._escA(s)}" ${s === order.status ? 'selected' : ''}>${this._esc(s)}</option>`)
+      .map((s) => `<option value="${this._escA(s)}" ${s === displayStatus(order.status) ? 'selected' : ''}>${this._esc(s)}</option>`)
       .join('');
 
     return `
@@ -431,7 +472,7 @@ class LocDocShop extends HTMLElement {
         <button class="btn" data-admin-back>← Back to queue</button>
       </div>
       <div class="m" style="color:var(--gray-400);font-size:13px;margin-bottom:12px">
-        ${this._esc(order.memberName || order.memberEmail || '')} · status <b>${this._esc(order.status)}</b> ·
+        ${this._esc(order.memberName || order.memberEmail || '')} · status <b>${this._esc(displayStatus(order.status))}</b> ·
         charged <b>${charged} pts</b>${order.pricingConfirmed ? '' : ' (member\'s estimate)'}
       </div>
 
@@ -594,6 +635,9 @@ class LocDocShop extends HTMLElement {
   _wireAdmin(panel) {
     panel.querySelectorAll('[data-review]').forEach((b) =>
       b.addEventListener('click', () => this._adminSend('admin-review', { orderId: b.getAttribute('data-review') })));
+
+    const filter = panel.querySelector('[data-admin-filter]');
+    if (filter) filter.addEventListener('change', () => { this._adminFilter = filter.value; this._renderPanel(); });
 
     // Live totals while editing a price. Prime them once so the breakdown is filled in on open.
     if (this._adminOrder && panel.querySelector('[data-order-total]')) {
@@ -779,20 +823,25 @@ class LocDocShop extends HTMLElement {
         <label class="chk"><input type="checkbox" data-f="s-pants"> Pants</label>
       </div>
       <div class="grid" data-plain>${this._in('Size', 's-size')}</div>
-      <div class="grid" data-hat hidden>
+      <div class="grid" data-hat>
         ${this._in('Hat size', 's-hatsize')}
         ${this._sel_('Logo placement', 's-place', HAT_PLACEMENTS)}
       </div>
-      <div class="grid" data-pants hidden>
+      <div class="grid" data-pants>
         ${this._in('Pant size (waist)', 's-pantsize')}
         ${this._in('Inseam', 's-inseam')}
       </div>
       <div class="sub grid">
-        ${this._sel_('Logo', 's-logo', LOGO_OPTIONS)}
+        ${this._sel_('Logo', 's-logo', this._logoOptions())}
         ${this._sel_('Logo color', 's-logocolor', LOGO_COLORS)}
       </div>
       <div class="preview" data-fees></div>
       ${this._actions()}`;
+  }
+
+  // "None" (a blank garment) is only offered to Operations; everyone else must pick a real logo.
+  _logoOptions() {
+    return this._canSelectNoLogo ? [NO_LOGO_OPTION, ...LOGO_OPTIONS] : LOGO_OPTIONS;
   }
 
   _amazonForm() {
@@ -888,23 +937,18 @@ class LocDocShop extends HTMLElement {
     if (this._tab === 'sanmar') {
       const isHat = Boolean(this._v('s-hat'));
       const isPants = Boolean(this._v('s-pants'));
-      const show = (sel, on) => { const el = r.querySelector(sel); if (el) el.hidden = !on; };
-      show('[data-hat]', isHat);
-      show('[data-pants]', isPants);
-      show('[data-plain]', !isHat && !isPants);
-
-      // An item is a hat OR pants, never both. Disable (and grey out) the opposite checkbox while
-      // one is checked, so you can't tick Hat and then type a pant size — a visual aid on top of the
-      // validation that already blocks a bad line.
-      const hatChk = r.querySelector('[data-f="s-hat"]');
-      const pantsChk = r.querySelector('[data-f="s-pants"]');
-      if (hatChk && pantsChk) {
-        pantsChk.disabled = isHat;
-        hatChk.disabled = isPants;
-        const lbl = (chk) => chk.closest('.chk');
-        if (lbl(pantsChk)) lbl(pantsChk).classList.toggle('disabled', isHat);
-        if (lbl(hatChk)) lbl(hatChk).classList.toggle('disabled', isPants);
-      }
+      // The hat/pants/plain fields stay visible but are DISABLED (and greyed) until their checkbox
+      // is ticked — so you can see what a hat order asks for, but can't type a hat size without
+      // saying it's a hat. Plain "Size" is the fallback when it's neither.
+      const setGroup = (sel, off) => {
+        const el = r.querySelector(sel);
+        if (!el) return;
+        el.classList.toggle('group-disabled', off);
+        el.querySelectorAll('input, select').forEach((i) => { i.disabled = off; });
+      };
+      setGroup('[data-hat]', !isHat);
+      setGroup('[data-pants]', !isPants);
+      setGroup('[data-plain]', isHat || isPants);
 
       const fees = r.querySelector('[data-fees]');
       if (fees) {
@@ -957,7 +1001,7 @@ class LocDocShop extends HTMLElement {
           const pending = o.pricingConfirmed === false || o.status === 'Pending Pricing';
           return `
           <div class="ord">
-            <div class="h"><b>${this._esc(o.orderNumber || 'Order')}</b><span class="st">${this._esc(o.status || '')}</span></div>
+            <div class="h"><b>${this._esc(o.orderNumber || 'Order')}</b><span class="st">${this._esc(displayStatus(o.status))}</span></div>
             <div class="m">${this._fmtDate(o.dateOrdered)} · ${Number(o.totalPoints) || 0} pts${pending ? ' (estimated)' : ''}</div>
             ${pending ? '<div class="m">Awaiting price confirmation — your points will be adjusted if the final price differs.</div>' : ''}
           </div>`;

@@ -9,8 +9,20 @@ import {
   STATUS, cartTotal, hasLogoCharge, hatPlacementFee, isMemberVisibleStatus,
   needsPricingConfirmation, parseMoney, pointsForCart,
   priceLine, priceSanmarLine, validateLine,
-  ourUnitPrice, ourCostForLine,
+  ourUnitPrice, ourCostForLine, displayStatus,
 } from '../src/elements/shop-pricing.js';
+
+// --- status display normalisation ------------------------------------------
+test('"Completed" displays as "Received"; other statuses pass through', () => {
+  assert.equal(displayStatus('Completed'), 'Received');
+  assert.equal(displayStatus('completed'), 'Received');
+  assert.equal(displayStatus(STATUS.RECEIVED), 'Received');
+  assert.equal(displayStatus(STATUS.ORDERED), 'Ordered');
+  assert.equal(displayStatus(STATUS.WAITING_BULK), 'Waiting - Bulk Order');
+  assert.equal(displayStatus(''), '');
+  // A legacy "Completed" order must stay visible to the member (it's a synonym for Received).
+  assert.equal(isMemberVisibleStatus('Completed'), true);
+});
 
 // --- our cost (admin-only bulk discount) -----------------------------------
 // The member is always charged full price; this is only what the COMPANY pays the provider, which

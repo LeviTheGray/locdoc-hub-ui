@@ -62,10 +62,22 @@ const MEMBER_VISIBLE = [
   STATUS.WAITING_BULK,
   STATUS.PARTIALLY_RECEIVED,
   STATUS.RECEIVED,
+  'completed', // legacy synonym for Received — see displayStatus
 ].map((s) => s.toLowerCase());
 
 export function isMemberVisibleStatus(status) {
   return MEMBER_VISIBLE.includes(String(status == null ? '' : status).trim().toLowerCase());
+}
+
+/**
+ * Older orders were closed out as "Completed"; the current workflow calls the same end state
+ * "Received". They mean the same thing, so normalise "Completed" → "Received" for DISPLAY only —
+ * the stored value is left as-is. Everything else passes through unchanged.
+ */
+const STATUS_DISPLAY_ALIASES = { completed: STATUS.RECEIVED };
+export function displayStatus(status) {
+  const key = String(status == null ? '' : status).trim().toLowerCase();
+  return STATUS_DISPLAY_ALIASES[key] || (status == null ? '' : String(status));
 }
 
 /** Custom items need an admin to confirm the price; catalog items are already priced. */
