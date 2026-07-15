@@ -27,7 +27,7 @@
  */
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
-import { cartTotal, pointsForCart, priceLine, validateLine } from './shop-pricing.js';
+import { cartTotal, pointsForCart, priceLine, validateLine, ourUnitPrice, BULK_DISCOUNT_THRESHOLD } from './shop-pricing.js';
 
 const HAT_PLACEMENTS = ['Front', 'Front Center', 'Left Side', 'Right Side', 'Back'];
 const LOGO_OPTIONS = ['None', 'LocDoc', 'LocDoc + Name'];
@@ -61,6 +61,8 @@ const STYLES = `
   .checks { display: flex; gap: 18px; margin: 14px 0; }
   .chk { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--gray-600); cursor: pointer; }
   .chk input { width: auto; }
+  .chk.disabled { opacity: .4; cursor: not-allowed; }
+  .chk.disabled input { cursor: not-allowed; }
   .sub { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--gray-200); }
 
   .preview { margin-top: 14px; font-size: 13px; color: var(--gray-600); }
@@ -411,6 +413,10 @@ class LocDocShop extends HTMLElement {
       <div class="totals" style="font-weight:600;font-size:13px;color:var(--gray-600)">
         <span>Points</span><span data-order-points></span>
       </div>
+      <div class="totals" style="font-weight:700;font-size:13px;color:var(--success)">
+        <span>Our price <span style="font-weight:400;color:var(--gray-400)">(after 15% bulk discount over $${BULK_DISCOUNT_THRESHOLD})</span></span>
+        <span data-order-ourprice></span>
+      </div>
       <div class="totals" style="font-weight:600;font-size:13px;color:var(--gray-400)">
         <span>Member was charged</span><span>${charged} pts</span>
       </div>`;
@@ -515,6 +521,7 @@ class LocDocShop extends HTMLElement {
     const fees = [];   // one row per fee, per line
     let total = 0;
     let feeTotal = 0;
+    let ourTotal = 0;  // what WE pay after the provider's 15%-over-$25 bulk discount
 
     for (const it of items) {
       const input = panel ? panel.querySelector(`[data-price="${it._id}"]`) : null;
@@ -538,8 +545,10 @@ class LocDocShop extends HTMLElement {
         });
       }
       total += p.total;
+      ourTotal += ourUnitPrice(p.unitPrice) * qty;
     }
-    return { fees, feeTotal, total, points: Math.round(total) };
+    ourTotal = Math.round(ourTotal * 100) / 100;
+    return { fees, feeTotal, total, points: Math.round(total), ourTotal };
   }
 
   _adminFeesBlock(panel) {
@@ -562,7 +571,7 @@ class LocDocShop extends HTMLElement {
   // Recompute the fees and totals as the admin types. Deliberately does NOT re-render the whole
   // panel — that would blow away the input they're in the middle of editing.
   _adminSyncTotals(panel) {
-    const { total, points } = this._adminMoney(panel);
+    const { total, points, ourTotal } = this._adminMoney(panel);
 
     const feesEl = panel.querySelector('[data-admin-fees]');
     if (feesEl) feesEl.innerHTML = this._adminFeesBlock(panel);
@@ -571,6 +580,8 @@ class LocDocShop extends HTMLElement {
     if (t) t.textContent = `$${total.toFixed(2)}`;
     const pts = panel.querySelector('[data-order-points]');
     if (pts) pts.textContent = `${points} pts`;
+    const ours = panel.querySelector('[data-order-ourprice]');
+    if (ours) ours.textContent = `$${ourTotal.toFixed(2)}`;
   }
 
   _confirmedFrom(panel) {
@@ -881,6 +892,19 @@ class LocDocShop extends HTMLElement {
       show('[data-hat]', isHat);
       show('[data-pants]', isPants);
       show('[data-plain]', !isHat && !isPants);
+
+      // An item is a hat OR pants, never both. Disable (and grey out) the opposite checkbox while
+      // one is checked, so you can't tick Hat and then type a pant size — a visual aid on top of the
+      // validation that already blocks a bad line.
+      const hatChk = r.querySelector('[data-f="s-hat"]');
+      const pantsChk = r.querySelector('[data-f="s-pants"]');
+      if (hatChk && pantsChk) {
+        pantsChk.disabled = isHat;
+        hatChk.disabled = isPants;
+        const lbl = (chk) => chk.closest('.chk');
+        if (lbl(pantsChk)) lbl(pantsChk).classList.toggle('disabled', isHat);
+        if (lbl(hatChk)) lbl(hatChk).classList.toggle('disabled', isPants);
+      }
 
       const fees = r.querySelector('[data-fees]');
       if (fees) {

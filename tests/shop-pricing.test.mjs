@@ -9,7 +9,26 @@ import {
   STATUS, cartTotal, hasLogoCharge, hatPlacementFee, isMemberVisibleStatus,
   needsPricingConfirmation, parseMoney, pointsForCart,
   priceLine, priceSanmarLine, validateLine,
+  ourUnitPrice, ourCostForLine,
 } from '../src/elements/shop-pricing.js';
+
+// --- our cost (admin-only bulk discount) -----------------------------------
+// The member is always charged full price; this is only what the COMPANY pays the provider, which
+// discounts 15% on any single item over $25. It must never affect what a member is charged.
+test('our unit price applies 15% only above the $25 threshold', () => {
+  assert.equal(ourUnitPrice(25), 25);      // exactly $25 → no discount
+  assert.equal(ourUnitPrice(20), 20);      // under → full price
+  assert.equal(ourUnitPrice(100), 85);     // over → 15% off
+  assert.equal(ourUnitPrice(30), 25.5);
+});
+
+test('our cost per line discounts the unit (fees included) and multiplies by qty', () => {
+  // SanMar hat: $30 clothing + $3.50 front placement = $33.50 unit (> $25) → 15% off × 2.
+  const line = { source: 'sanmar', clothingPrice: 30, quantity: 2, isHat: true,
+    logo: 'LocDoc', logoColor: 'White', logoPlacement: 'Front' };
+  assert.equal(priceLine(line).unitPrice, 33.5);
+  assert.equal(ourCostForLine(line), 56.96); // round2(33.5 * 0.85) = 28.48, × 2
+});
 
 test('garment with a logo pays the flat $3 fee per unit', () => {
   const p = priceSanmarLine({ clothingPrice: 20, quantity: 2, logo: 'LocDoc', logoColor: 'White' });
@@ -120,7 +139,7 @@ test('amazon link must be http(s)', () => {
 test('every workflow status stays visible to the member; only Cancelled/Archived hide', () => {
   for (const s of [
     STATUS.PENDING_PRICING, STATUS.READY_TO_ORDER, STATUS.ORDERED,
-    STATUS.PARTIALLY_RECEIVED, STATUS.RECEIVED,
+    STATUS.WAITING_BULK, STATUS.PARTIALLY_RECEIVED, STATUS.RECEIVED,
   ]) {
     assert.equal(isMemberVisibleStatus(s), true, `${s} must remain visible to the member`);
   }
@@ -145,6 +164,7 @@ test('status strings are exactly what the automations expect', () => {
   assert.equal(STATUS.RECEIVED, 'Received');
   assert.equal(STATUS.CANCELLED, 'Cancelled');
   assert.equal(STATUS.ARCHIVED, 'Archived');
+  assert.equal(STATUS.WAITING_BULK, 'Waiting - Bulk Order');
 });
 
 test('only custom items need an admin to confirm pricing', () => {

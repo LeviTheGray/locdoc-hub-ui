@@ -38,6 +38,9 @@ export const STATUS = {
   PENDING_PRICING: 'Pending Pricing',
   READY_TO_ORDER: 'Ready to Order',
   ORDERED: 'Ordered',
+  // Held because the item ships only in bulk (e.g. hats come in a case of 12), so we sit on the
+  // order until enough accumulate to place it. The member's points stay charged while it waits.
+  WAITING_BULK: 'Waiting - Bulk Order',
   PARTIALLY_RECEIVED: 'Partially Received',
   RECEIVED: 'Received',
   CANCELLED: 'Cancelled',
@@ -56,6 +59,7 @@ const MEMBER_VISIBLE = [
   STATUS.PENDING_PRICING,
   STATUS.READY_TO_ORDER,
   STATUS.ORDERED,
+  STATUS.WAITING_BULK,
   STATUS.PARTIALLY_RECEIVED,
   STATUS.RECEIVED,
 ].map((s) => s.toLowerCase());
@@ -159,6 +163,26 @@ export function priceFlatLine(line) {
 /** Price any line by its source. The one entry point both the element and the backend call. */
 export function priceLine(line) {
   return (line && line.source) === 'sanmar' ? priceSanmarLine(line) : priceFlatLine(line);
+}
+
+/**
+ * OUR cost vs. the member's price. The member is always charged full price (that's `priceLine`).
+ * Our uniform provider discounts 15% on any single item over $25, so what the COMPANY actually pays
+ * is lower on those lines. This is an admin-only figure — it never changes what a member is charged.
+ */
+export const BULK_DISCOUNT_RATE = 0.15;
+export const BULK_DISCOUNT_THRESHOLD = 25;
+
+/** The discounted unit price we pay: 15% off when a single unit is over $25, otherwise full. */
+export function ourUnitPrice(unitPrice) {
+  const p = parseMoney(unitPrice);
+  return p > BULK_DISCOUNT_THRESHOLD ? round2(p * (1 - BULK_DISCOUNT_RATE)) : p;
+}
+
+/** What the company pays for one line after the bulk discount (fees included, discounted per unit). */
+export function ourCostForLine(line) {
+  const p = priceLine(line);
+  return round2(ourUnitPrice(p.unitPrice) * p.quantity);
 }
 
 /** Cart total, recomputed from the lines — never summed from client-supplied totals. */
