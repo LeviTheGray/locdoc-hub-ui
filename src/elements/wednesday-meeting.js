@@ -329,7 +329,7 @@ const STYLES = `
 `;
 
 class WednesdayMeeting extends HTMLElement {
-  static get observedAttributes() { return ['init-data']; }
+  static get observedAttributes() { return ['init-data', 'agenda-result']; }
 
   constructor() {
     super();
@@ -340,6 +340,9 @@ class WednesdayMeeting extends HTMLElement {
     this._clWeek = null;    // selected cleanliness week
     this._lightbox = null;  // { items: [{ url, caption }], i } | null
     this._shell = false;
+    this._isOperations = false; // from init-data — unlocks the Agenda-tab slides editor
+    this._agendaBusy = false;   // saving the agenda link
+    this._agendaMsg = null;     // { ok, text } feedback after a save
     this._onKey = this._onKey.bind(this);
   }
 
@@ -353,12 +356,30 @@ class WednesdayMeeting extends HTMLElement {
 
   attributeChangedCallback(name, _old, value) {
     if (name === 'init-data' && value) this._applyData(value);
+    if (name === 'agenda-result' && value) this._applyAgendaResult(value);
   }
 
   _applyData(json) {
-    try { const p = JSON.parse(json); if (p && typeof p === 'object') this._data = { ...SAMPLE_DATA, ...p }; }
-    catch (e) { /* keep sample data */ }
+    try {
+      const p = JSON.parse(json);
+      if (p && typeof p === 'object') { this._data = { ...SAMPLE_DATA, ...p }; this._isOperations = Boolean(p.isOperations); }
+    } catch (e) { /* keep sample data */ }
     this._clWeek = null;
+    this._render();
+  }
+
+  // Result of a save-agenda-slides round-trip. On success, reflect the new link locally so the
+  // embed updates without waiting for a full init-data refresh.
+  _applyAgendaResult(json) {
+    let r = {};
+    try { r = JSON.parse(json) || {}; } catch (e) { return; }
+    this._agendaBusy = false;
+    if (r.ok) {
+      this._data.agendaSlide = { ...(this._data.agendaSlide || {}), url: r.url || '' };
+      this._agendaMsg = { ok: true, text: r.url ? 'Slides link saved.' : 'Slides link removed.' };
+    } else {
+      this._agendaMsg = { ok: false, text: r.error || 'Could not save the slides link.' };
+    }
     this._render();
   }
 
@@ -417,6 +438,7 @@ class WednesdayMeeting extends HTMLElement {
         this._render(); return;
       }
       if (e.target.closest('[data-lightbox-close]') || e.target.hasAttribute('data-lightbox-overlay')) { this._lightbox = null; this._render(); return; }
+      if (e.target.closest('[data-save-agenda]')) { this._saveAgenda(); return; }
       const link = e.target.closest('[data-nav]');
       if (link) { this.dispatchEvent(new CustomEvent('navigate', { detail: { key: link.getAttribute('data-nav') }, bubbles: true, composed: true })); return; }
       if (e.target.closest('[data-present-toggle]')) this._togglePresent(e.target.closest('[data-present-toggle]'));
@@ -435,6 +457,18 @@ class WednesdayMeeting extends HTMLElement {
     btn.textContent = on ? '✕ Exit presenter' : '▶ Presenter mode';
     try { if (on) this.requestFullscreen && this.requestFullscreen().catch(() => {}); else document.fullscreenElement && document.exitFullscreen().catch(() => {}); } catch (e) { /* ignore */ }
     this._render();
+  }
+
+  // Operations-only: hand the typed Google Slides link to the page, which writes it to this
+  // meeting's WeeklyAgendas row (server re-checks Operations). agendaSlide.id targets the row.
+  _saveAgenda() {
+    const a = this._data.agendaSlide || {};
+    if (!a.id) { this._agendaMsg = { ok: false, text: "Add this meeting's topic in Weekly Agendas first." }; this._render(); return; }
+    const input = this.shadowRoot.querySelector('[data-agenda-url]');
+    const url = input ? input.value.trim() : '';
+    if (url && !/^https?:\/\//i.test(url)) { this._agendaMsg = { ok: false, text: 'Enter a valid https:// link.' }; this._render(); return; }
+    this._agendaBusy = true; this._agendaMsg = null; this._render();
+    this.dispatchEvent(new CustomEvent('save-agenda-slides', { detail: { agendaId: a.id, url }, bubbles: true, composed: true }));
   }
 
   _render() {
@@ -632,6 +666,9 @@ class WednesdayMeeting extends HTMLElement {
       <div class="placeholder">A tech submits Problem / Solution + photos; their spotlight shows here.</div>`;
     const i = Math.max(0, Math.min(this._slide, items.length - 1));
     const s = items[i];
+    // A tech can present a Google Slides deck instead of photos. When they do, embed the slides in
+    // place of the photo grid (photos, if any were also added, are not shown — the deck is the point).
+    const slideSrc = s.slidesUrl ? slidesEmbed(s.slidesUrl) : '';
     const photos = Array.isArray(s.photos) ? s.photos : (s.photo ? [{ url: s.photo, caption: '' }] : []);
     const photoHtml = photos.map(p => {
       const isImg = /^https?:/.test(p.url || '');
@@ -640,6 +677,9 @@ class WednesdayMeeting extends HTMLElement {
         ${p.caption ? `<div class="cap">${esc(p.caption)}</div>` : ''}
         <div class="sp-zoom-hint">🔍 Click to enlarge</div></div>`;
     }).join('');
+    const media = slideSrc
+      ? `<div class="slide-embed"><iframe src="${esc(slideSrc)}" allowfullscreen></iframe></div>`
+      : `<div class="sp-photos" data-zoom-group>${photoHtml || '<div class="placeholder">No photos yet.</div>'}</div>`;
     return `
       <div class="panel-title">Tech Spotlight</div>
       <div class="sp-head"><div class="sp-tech">${esc(s.tech || '')}</div>${items.length > 1 ? `<div class="panel-sub" style="margin:0">${i + 1} of ${items.length} · ← →</div>` : ''}</div>
@@ -648,7 +688,7 @@ class WednesdayMeeting extends HTMLElement {
         <div class="card"><h4>The problem</h4><p>${esc(s.problem)}</p></div>
         <div class="card"><h4>The solution</h4><p>${esc(s.solution)}</p></div>
       </div>
-      <div class="sp-photos" data-zoom-group>${photoHtml || '<div class="placeholder">No photos yet.</div>'}</div>
+      ${media}
       ${items.length > 1 ? `<div class="sp-nav">
         <button class="deck-btn" data-entry-nav="-1" ${i === 0 ? 'disabled' : ''}>← Previous</button>
         <button class="deck-btn" data-entry-nav="1" ${i === items.length - 1 ? 'disabled' : ''}>Next →</button></div>` : ''}`;
@@ -669,7 +709,27 @@ class WednesdayMeeting extends HTMLElement {
         ? `<div class="slide-embed"><iframe src="${esc(src)}" allowfullscreen></iframe></div>`
         : `<div class="card"><div class="placeholder">${hasTopic
             ? 'No presentation linked for this meeting yet.'
-            : 'No upcoming meeting found in Weekly Agendas.'} Add a Google Slides link to the meeting's row to show it here.${a.url ? ` <a class="slide-link" href="${esc(a.url)}" target="_blank" rel="noopener">Open link</a>` : ''}</div></div>`}`;
+            : 'No upcoming meeting found in Weekly Agendas.'} Add a Google Slides link to the meeting's row to show it here.${a.url ? ` <a class="slide-link" href="${esc(a.url)}" target="_blank" rel="noopener">Open link</a>` : ''}</div></div>`}
+      ${this._isOperations ? this._agendaEditor(a) : ''}`;
+  }
+
+  // Operations-only inline editor for the meeting's Google Slides link. Hidden while presenting —
+  // nobody edits the link on the projector, and it keeps the deck clean on the TV.
+  _agendaEditor(a) {
+    if (this.hasAttribute('data-present')) return '';
+    const msg = this._agendaMsg;
+    return `
+      <div class="card" style="margin-top:16px;padding:16px 18px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Operations · Google Slides link</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input type="text" data-agenda-url placeholder="https://docs.google.com/presentation/d/…"
+            value="${esc(a.url || '')}"
+            style="flex:1;min-width:220px;padding:9px 11px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:14px">
+          <button class="deck-btn" data-save-agenda ${this._agendaBusy ? 'disabled' : ''}>${this._agendaBusy ? 'Saving…' : 'Save'}</button>
+        </div>
+        ${a.id ? '' : `<div class="muted" style="margin-top:8px">Add this meeting's topic in Weekly Agendas before linking slides.</div>`}
+        ${msg ? `<div style="margin-top:8px;font-size:13px;font-weight:600;color:${msg.ok ? 'var(--green)' : 'var(--red)'}">${esc(msg.text)}</div>` : ''}
+      </div>`;
   }
 }
 

@@ -22,8 +22,11 @@
  *                       photo-result { id, url } | { id, error }   (correlated by id, carries _ts)
  *                       submit-result { ok:true } | { ok:false, error }   (carries _ts)
  *   • element → Velo :  'upload-photo'    { id, dataUrl }
- *                       'submit-spotlight'{ title, problem, solution, photos }
+ *                       'submit-spotlight'{ title, problem, solution, slidesUrl, photos }
  *                       'navigate'        { key }
+ *
+ * SLIDES: a tech may paste a Google Slides link instead of (or as well as) photos. When present,
+ * the Wednesday deck embeds the slides in place of the photo grid. Stored as `slidesUrl`.
  *
  * Editor setup: Add → Embed Code → Custom Element → this file, tag
  * `tech-spotlight-submit`, element ID `techSpotlightSubmit`.
@@ -245,6 +248,8 @@ class TechSpotlightSubmit extends HTMLElement {
       <textarea id="problem" placeholder="What was the situation / what was wrong?">${esc(d.problem || '')}</textarea>
       <label class="f">The solution</label>
       <textarea id="solution" placeholder="How did you fix it?">${esc(d.solution || '')}</textarea>
+      <label class="f">Google Slides link <span style="font-weight:400;color:var(--gray-400)">(optional — if you add one, the meeting shows your slides instead of photos)</span></label>
+      <input type="text" id="slides" placeholder="https://docs.google.com/presentation/d/…" value="${esc(d.slides || '')}">
       <label class="f">Photos <span style="font-weight:400;color:var(--gray-400)">(add a short description under each — shown beneath the photo)</span></label>
       <div class="photo-drop" data-trigger>📷 Tap to take or add photos</div>
       <input type="file" id="file" accept="image/*" multiple style="display:none">
@@ -279,7 +284,7 @@ class TechSpotlightSubmit extends HTMLElement {
   // _render() rebuilds the form, so stash what's typed before toggling the override on/off.
   _saveDraft() {
     const v = (id) => (this._$(id) ? this._$(id).value : '');
-    this._draft = { title: v('title'), problem: v('problem'), solution: v('solution') };
+    this._draft = { title: v('title'), problem: v('problem'), solution: v('solution'), slides: v('slides') };
   }
 
   _fmtDate(iso) {
@@ -406,8 +411,11 @@ class TechSpotlightSubmit extends HTMLElement {
   _submit() {
     if (this._submitting) return;
     const v = (id) => (this._$(id) ? this._$(id).value.trim() : '');
-    const title = v('title'), problem = v('problem'), solution = v('solution');
+    const title = v('title'), problem = v('problem'), solution = v('solution'), slidesUrl = v('slides');
     if (!title || !problem || !solution) { this._showMsg('Please fill in the title, problem and solution.', 'err'); return; }
+    if (slidesUrl && !/^https?:\/\//i.test(slidesUrl)) {
+      this._showMsg('That Google Slides link needs to start with https://', 'err'); return;
+    }
     if (this._override && !(this._forTech && this._forDate)) {
       this._showMsg('Pick the technician and the date this spotlight presents on.', 'err'); return;
     }
@@ -421,13 +429,13 @@ class TechSpotlightSubmit extends HTMLElement {
     // Otherwise name/email are locked to the profile and re-derived server-side, so aren't sent.
     if (this._override) {
       this.dispatchEvent(new CustomEvent('submit-spotlight-for', {
-        detail: { title, problem, solution, photos, techEmail: this._forTech, spotlightDate: this._forDate },
+        detail: { title, problem, solution, slidesUrl, photos, techEmail: this._forTech, spotlightDate: this._forDate },
         bubbles: true, composed: true,
       }));
       return;
     }
     this.dispatchEvent(new CustomEvent('submit-spotlight',
-      { detail: { title, problem, solution, photos }, bubbles: true, composed: true }));
+      { detail: { title, problem, solution, slidesUrl, photos }, bubbles: true, composed: true }));
   }
 
   _applySubmitResult(json) {
