@@ -32,6 +32,9 @@ function getAuditWeekStart(date) {
 }
 function fmtWeek(iso) { return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function avg(arr) { return arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null; }
+// 0% baseline: average the submitted scores over the EXPECTED headcount, so everyone who owed an
+// audit but didn't submit counts as 0%. Returns null only when nobody owed it (nothing to show).
+function avgOverExpected(scores, expected) { return expected ? Math.round(scores.reduce((a, b) => a + b, 0) / expected) : null; }
 function scoreColor(s) { return s >= 80 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--red)'; }
 function branchLabel(b) { return b || 'Unassigned'; }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -84,6 +87,15 @@ const STYLES = `
   .chip .tag { font-size: 10px; font-weight: 700; opacity: .7; }
   .chip.done { background: #dcfce7; color: #14532d; }
   .all-in { font-size: 13px; color: #14532d; font-weight: 600; }
+  .ca-label { font-size: 12px; font-weight: 700; color: #1e3a8a; margin: 14px 0 8px; padding-top: 12px; border-top: 1px dashed var(--gray-200); }
+  .ca-row { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--gray-100); }
+  .ca-row:last-child { border-bottom: none; }
+  .ca-name { font-weight: 600; }
+  .ca-by { font-size: 11px; color: var(--gray-400); margin-left: auto; }
+  .ca-score { font-weight: 800; font-size: 14px; min-width: 44px; text-align: right; }
+  .ca-stars { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .clean-chip { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 100px; background: #dbeafe; color: #1e3a8a; display: inline-flex; align-items: center; gap: 5px; }
+  .clean-chip .n { font-size: 10px; font-weight: 700; opacity: .7; }
   .chart { display: flex; align-items: flex-end; gap: 10px; height: 160px; padding-top: 18px; }
   .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 22px; }
   .bar { width: 100%; max-width: 44px; border-radius: 6px 6px 0 0; position: relative; }
@@ -112,6 +124,7 @@ class CleanlinessReport extends HTMLElement {
     this._meId = null;
     this._participants = [];
     this._audits = [];
+    this._commonAreaAudits = [];
   }
 
   connectedCallback() {
@@ -159,6 +172,7 @@ class CleanlinessReport extends HTMLElement {
     if (p.error) { this._$('loadingState').innerHTML = `<span style="color:#b91c1c">${p.error}</span>`; return; }
     this._scope = p.scope; this._meId = p.meId;
     this._participants = p.participants || []; this._audits = p.audits || [];
+    this._commonAreaAudits = p.commonAreaAudits || [];
     this._$('loadingState').style.display = 'none';
     this._$('report').style.display = '';
     this._buildWeekOptions();
@@ -195,16 +209,21 @@ class CleanlinessReport extends HTMLElement {
   _renderStats(weekAudits, byEmp) {
     const submitted = this._participants.filter(p => byEmp[p._id]).length;
     const expected = this._participants.length;
-    const overall = avg(weekAudits.map(a => a.score));
-    const vAvg = avg(weekAudits.map(a => a.vehicleScore).filter(s => s != null));
-    const oAvg = avg(weekAudits.map(a => a.officeScore).filter(s => s != null));
+    // 0% baseline: every average is taken over the expected headcount (owed the audit), not just
+    // the people who submitted — so non-submittals pull the numbers down.
+    const owesV = this._participants.filter(p => p.owesVehicle).length;
+    const owesO = this._participants.filter(p => p.owesOffice).length;
+    const overall = avgOverExpected(weekAudits.map(a => a.score), expected);
+    const vAvg = avgOverExpected(weekAudits.map(a => a.vehicleScore).filter(s => s != null), owesV);
+    const oAvg = avgOverExpected(weekAudits.map(a => a.officeScore).filter(s => s != null), owesO);
     const tiles = [
       { v: `${submitted}/${expected}`, l: 'Submitted' },
       { v: overall == null ? '—' : overall + '%', l: 'Avg Score' },
       { v: vAvg == null ? '—' : vAvg + '%', l: 'Vehicle Avg' },
       { v: oAvg == null ? '—' : oAvg + '%', l: 'Office Avg' },
     ];
-    this._$('stats').innerHTML = tiles.map(t => `<div class="stat"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join('');
+    this._$('stats').innerHTML = tiles.map(t => `<div class="stat"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join('')
+      + `<div class="stat-note" style="grid-column:1/-1;font-size:11px;color:var(--gray-400);margin-top:-6px">Averages count non-submissions as 0%.</div>`;
   }
 
   _typeBar(label, score, owedCount) {
@@ -214,6 +233,7 @@ class CleanlinessReport extends HTMLElement {
   }
 
   _renderBranches(byEmp) {
+    const week = this._selectedWeek();
     const branches = {};
     this._participants.forEach(p => { const b = branchLabel(p.branch); (branches[b] = branches[b] || []).push(p); });
     const names = Object.keys(branches).sort();
@@ -248,13 +268,33 @@ class CleanlinessReport extends HTMLElement {
 
       return `<div class="card">
           <div class="branch-head"><div class="branch-name">🏢 ${esc(b)}</div><div class="pill ${pillCls}">${sub}/${exp} submitted</div></div>
-          <div class="typebars">${this._typeBar('🚐 Vehicle', avg(vScores), owesV)}${this._typeBar('🏢 Office', avg(oScores), owesO)}</div>
+          <div class="typebars">${this._typeBar('🚐 Vehicle', avgOverExpected(vScores, owesV), owesV)}${this._typeBar('🏢 Office', avgOverExpected(oScores, owesO), owesO)}</div>
           ${subList}
           ${nonsubs.length
             ? `<div class="nonsub-label">Did not submit (${nonsubs.length})</div><div class="chips">${nonsubs.map(m => `<span class="chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? 'VEH+OFF' : m.owesVehicle ? 'VEH' : 'OFF'}</span></span>`).join('')}</div>`
             : `<div class="all-in">✓ Everyone in this branch submitted</div>`}
+          ${this._renderCommonAreas(b, week)}
         </div>`;
     }).join('');
+  }
+
+  // Per-branch shared-space audits for the selected week: each area's score + who cleaned, plus a
+  // highlight of the branch's cleaners (name + number of areas they cleaned that week).
+  _renderCommonAreas(branchName, week) {
+    const rows = this._commonAreaAudits.filter(a => a.weekStart === week && branchLabel(a.branch) === branchName);
+    if (!rows.length) return '';
+    const areaHtml = rows
+      .slice()
+      .sort((x, y) => (y.score || 0) - (x.score || 0))
+      .map(a => `<div class="ca-row"><span class="ca-name">${esc(a.areaName || 'Common Area')}</span>${a.cleanerName ? `<span class="ca-by">cleaned by ${esc(a.cleanerName)}</span>` : ''}<span class="ca-score" style="color:${scoreColor(a.score)}">${a.score}%</span></div>`)
+      .join('');
+    const byCleaner = {};
+    rows.forEach(a => { if (a.cleanerName) byCleaner[a.cleanerName] = (byCleaner[a.cleanerName] || 0) + 1; });
+    const cleaners = Object.keys(byCleaner).sort((x, y) => byCleaner[y] - byCleaner[x]);
+    const stars = cleaners.length
+      ? `<div class="ca-stars">${cleaners.map(n => `<span class="clean-chip">🧽 ${esc(n)}${byCleaner[n] > 1 ? `<span class="n">×${byCleaner[n]}</span>` : ''}</span>`).join('')}</div>`
+      : '';
+    return `<div class="ca-label">🧽 Common Areas (${rows.length})</div><div class="sub-list">${areaHtml}</div>${stars}`;
   }
 
   _renderChart() {

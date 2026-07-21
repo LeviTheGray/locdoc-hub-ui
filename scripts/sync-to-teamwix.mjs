@@ -43,12 +43,12 @@ function applyBanner(src, srcRel, mode) {
 const CE = join(teamwix, 'src', 'public', 'custom-elements');
 const ELEMENTS = [
   'tokens.js', 'hub-home.js', 'home-landing.js', 'my-reports.js',
-  'weekly-report.js', 'cleanliness-audit.js', 'team-member-assessment.js',
+  'weekly-report.js', 'cleanliness-audit.js', 'common-area-audit.js', 'team-member-assessment.js',
   'tech-spotlight-submit.js', 'one-on-one.js', 'team-reports.js',
   'cleanliness-report.js', 'wednesday-meeting.js', 'mission-vision.js',
   'core-values-data.js', 'core-values.js', 'resources-hub.js',
   'meetings.js', 'annual-events.js', 'company-holidays.js', 'benefits.js',
-  'shop.js',
+  'shop.js', 'employee-lifecycle.js',
 ];
 const targets = [
   { src: 'src/scoring-core.js', to: join(teamwix, 'src', 'backend', 'scoring-core.js'), mode: 'replace' },

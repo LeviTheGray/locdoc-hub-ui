@@ -18,9 +18,24 @@ test('blended composite + points — a full month', () => {
   const out = buildLiveMeasurables(r);
   assert.equal(out.composite, 93);       // mean(1, .90, .88) → 93
   assert.equal(out.participation, 3);
-  assert.equal(pts(r), 278);             // 100 + 90 + 88
-  assert.equal(out.metrics.length, 3);
+  assert.equal(pts(r), 278);             // 100 + 90 + 88 (+0 common-area, none this month)
+  assert.equal(out.metrics.length, 4);   // submissions, assessment, cleanliness, common-area
   assert.equal(out.metrics[0].key, 'submissions');
+  assert.equal(out.metrics[3].key, 'commonArea');
+});
+
+test('common-area recognition adds points without touching the composite', () => {
+  const base = { wDone: 4, expected: 4, aCount: 1, receivedAvg: 3.6, cDone: 4, avgScore: 88 };
+  const out = buildLiveMeasurables({ ...base, caCleans: 2, caSubmits: 1 });
+  const ca = out.metrics.find(m => m.key === 'commonArea');
+  assert.equal(ca.points, 60);           // 2×25 + 1×10, under the 100 cap
+  assert.equal(ca.detail.capped, false);
+  assert.equal(out.composite, 93);       // composite unchanged vs the no-common-area case
+  assert.equal(pts({ ...base, caCleans: 2, caSubmits: 1 }), 338); // 278 + 60
+
+  const capped = buildLiveMeasurables({ ...base, caCleans: 5, caSubmits: 3 }); // 155 raw → capped
+  assert.equal(capped.metrics.find(m => m.key === 'commonArea').points, 100);
+  assert.equal(capped.metrics.find(m => m.key === 'commonArea').detail.capped, true);
 });
 
 test('partial submissions + mid quality', () => {

@@ -26,7 +26,15 @@ export const LIVE_DEFS = {
   submissions:        { key: 'submissions',        label: 'Submissions',      emoji: '📥', category: 'Participation', valueType: 'completion', whoCompletes: 'employee', weight: 1 },
   assessmentQuality:  { key: 'assessmentQuality',  label: 'Team Assessments', emoji: '🤝', category: 'Quality',       valueType: 'quality', max: 4,   whoCompletes: 'employee', weight: 1 },
   cleanlinessQuality: { key: 'cleanlinessQuality', label: 'Cleanliness',      emoji: '🧹', category: 'Quality',       valueType: 'quality', max: 100, whoCompletes: 'employee', weight: 1 },
+  // Recognition bonus — points for cleaning/submitting shared common-area audits. Additive to the
+  // point total/level (drives the leaderboard) but NOT part of the quality composite, since not
+  // everyone works common areas — its absence must not penalize field staff.
+  commonArea:         { key: 'commonArea',         label: 'Common Areas',     emoji: '🧽', category: 'Recognition',   valueType: 'bonus', whoCompletes: 'employee', weight: 1 },
 };
+
+// Common-area recognition points: credited per cleaning and per submission, capped monthly so a
+// single busy branch can't run away with the leaderboard.
+export const COMMON_AREA_POINTS = { clean: 25, submit: 10, monthlyCap: 100 };
 export const ASSESSMENT_KEYS = ['humble', 'hungry', 'smart', 'helpfulKind', 'fastResponse', 'solvesProblems'];
 
 export function currentPeriod() { return new Date().toISOString().slice(0, 7); }
@@ -115,7 +123,7 @@ export function computeStreak(period, weeklyRows, submittedAssessRows, cleanRows
  * overall (participation + the two quality averages). Used by both the single and batch paths.
  */
 export function buildLiveMeasurables(raw) {
-  const { wDone, expected, aCount, receivedAvg, cDone, avgScore } = raw;
+  const { wDone, expected, aCount, receivedAvg, cDone, avgScore, caCleans = 0, caSubmits = 0 } = raw;
   const wOk = wDone >= expected, aOk = aCount > 0, cOk = cDone >= expected;
   const doneCount = (wOk ? 1 : 0) + (aOk ? 1 : 0) + (cOk ? 1 : 0);
   const partFrac = doneCount / 3;
@@ -146,12 +154,21 @@ export function buildLiveMeasurables(raw) {
     detail: { avgScore, count: cDone, expected },
   };
 
+  // Common-area recognition — additive point bonus, NOT folded into the composite (see LIVE_DEFS).
+  const caRaw = caCleans * COMMON_AREA_POINTS.clean + caSubmits * COMMON_AREA_POINTS.submit;
+  const caPoints = Math.min(COMMON_AREA_POINTS.monthlyCap, caRaw);
+  const commonArea = {
+    ...LIVE_DEFS.commonArea,
+    value: caCleans + caSubmits, points: caPoints, done: caPoints > 0,
+    detail: { cleaned: caCleans, submitted: caSubmits, capped: caRaw > COMMON_AREA_POINTS.monthlyCap },
+  };
+
   // Blended overall = mean of the available normalized components (quality with no data yet
-  // is excluded so it neither helps nor hurts).
+  // is excluded so it neither helps nor hurts). Common-area bonus is intentionally excluded.
   const comps = [partFrac];
   if (aFrac != null) comps.push(aFrac);
   if (cFrac != null) comps.push(cFrac);
   const composite = Math.round(comps.reduce((s, x) => s + x, 0) / comps.length * 100);
 
-  return { metrics: [submissions, assessmentQuality, cleanlinessQuality], composite, participation: doneCount };
+  return { metrics: [submissions, assessmentQuality, cleanlinessQuality, commonArea], composite, participation: doneCount };
 }

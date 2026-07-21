@@ -12,11 +12,15 @@
  * Data handoff:
  *   • Velo → element :  setAttribute('init-data', JSON.stringify({ resources: [ … ] }))
  *       resources[] item shape (mapped from the collection by the page code):
- *         { id, title, desc, category, body, docUrl, updated }
- *       - desc   : short summary for the card (optional)
- *       - body   : rich-text/HTML shown in the reader (optional; falls back to desc)
- *       - docUrl : link to the Google Doc (optional; drives the "View document" button)
- *       - updated: ISO date string (optional; shown as "Updated …")
+ *         { id, title, desc, category, body, docUrl, updated, fileType, googleDocId }
+ *       - desc     : short summary for the card (optional)
+ *       - body     : rich-text/HTML shown in the reader (optional; falls back to desc). Ignored
+ *                    when fileType resolves to an embed (see resolveEmbedUrl below).
+ *       - docUrl   : link to the Google Doc/Drive file (optional; drives the "View document" button)
+ *       - updated  : ISO date string (optional; shown as "Updated …")
+ *       - fileType : 'doc' (default) | 'pdf' | 'slides' — 'doc' renders `body` as HTML; other types
+ *                    render an inline iframe embed (via resolveEmbedUrl) instead, using googleDocId.
+ *       - googleDocId: Drive file ID, extracted upstream from docUrl — required for embed types.
  *   • element → Velo :  none (external doc links open in a new tab from inside the element).
  *
  * Categories are derived from the data, so they track whatever the collection contains.
@@ -63,6 +67,18 @@ const CATEGORY_HERO = {
 // 'Parts Spotlight' / 'parts-spotlight' / 'parts spotlight' → 'parts-spotlight'
 function slug(s) {
   return String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Universal embed resolver: maps a collection's fileType + Drive file ID to an embeddable iframe
+// URL. 'doc' (Google Docs, the original/default type) has no inline embed — it renders `body` HTML
+// instead. New file types (e.g. sheets) just need a new case here, no new fields/branches elsewhere.
+function resolveEmbedUrl(fileType, docId) {
+  if (!docId) return null;
+  switch (fileType) {
+    case 'pdf':    return `https://drive.google.com/file/d/${docId}/preview`;
+    case 'slides': return `https://docs.google.com/presentation/d/${docId}/embed?start=false&loop=false&delayms=5000`;
+    default:       return null;
+  }
 }
 
 // ⚠️ PLACEHOLDER DATA — only used until the page passes live `resources` via init-data.
@@ -151,6 +167,12 @@ const STYLES = `
   .reader-body ul, .reader-body ol { margin: 0 0 12px 22px; } .reader-body li { margin: 4px 0; }
   .reader-body a { color: var(--primary); }
   .reader-none { color: var(--gray-400); font-style: italic; }
+  .reader-embed {
+    position: relative; width: 100%; padding-top: 129.4%; /* portrait doc/PDF aspect */
+    border: 1.5px solid var(--gray-200); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+  }
+  .reader-embed.reader-embed--slides { padding-top: 56.25%; /* 16:9 for slide decks */ }
+  .reader-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
   .doc-btn {
     display: inline-flex; align-items: center; gap: 8px; margin-top: 22px;
     background: var(--primary); color: #fff; border: none; border-radius: var(--radius-sm);
@@ -392,10 +414,15 @@ class ResourcesHub extends HTMLElement {
     const meta = [effective ? 'Effective ' + effective : '', updated ? 'Updated ' + updated : '']
       .filter(Boolean).join(' · ');
     const img = r.image ? `<img class="reader-img" src="${this._escAttr(r.image)}" alt="" loading="lazy">` : '';
-    const bodyHtml = r.body
-      ? `<div class="reader-body">${r.body}</div>`
-      : (r.desc ? `<div class="reader-body">${this._esc(r.desc)}</div>`
-                : `<div class="reader-body reader-none">No preview available — open the document to read it.</div>`);
+    const embedUrl = resolveEmbedUrl(r.fileType, r.googleDocId);
+    const bodyHtml = embedUrl
+      ? `<div class="reader-embed${r.fileType === 'slides' ? ' reader-embed--slides' : ''}">
+           <iframe src="${this._escAttr(embedUrl)}" allowfullscreen loading="lazy"></iframe>
+         </div>`
+      : (r.body
+          ? `<div class="reader-body">${r.body}</div>`
+          : (r.desc ? `<div class="reader-body">${this._esc(r.desc)}</div>`
+                    : `<div class="reader-body reader-none">No preview available — open the document to read it.</div>`));
     const docBtn = r.docUrl
       ? `<a class="doc-btn" href="${this._escAttr(r.docUrl)}" target="_blank" rel="noopener">View document <span class="material-symbols-outlined">open_in_new</span></a>`
       : '';
