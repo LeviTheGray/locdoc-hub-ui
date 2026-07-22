@@ -353,6 +353,11 @@ const STYLES = `
   :host([data-present]) .cl-sub-rank,
   :host([data-present]) .cl-nonsub-label,
   :host([data-present]) .cl-sub-label { font-size:15px; }
+  /* Driver tiles: --fs scales the name/score text but the tile itself doesn't grow to match,
+     so a scaled name gets crushed to a single letter behind the score badge. Widen the tiles
+     (fewer per row) so scaled text actually fits. */
+  :host([data-present]) .drv-tiles { grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px; }
+  :host([data-present]) .drv-tile { padding:14px 18px; gap:16px; }
 
   @media (max-width:760px) {
     .drv-grid { grid-template-columns:1fr; } .drv-averages { flex-direction:row; flex-wrap:wrap; }
