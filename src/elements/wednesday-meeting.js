@@ -248,7 +248,9 @@ const STYLES = `
   .drv-tile { display:flex; align-items:center; gap:12px; border:1.5px solid var(--gray-200); border-radius:10px; padding:10px 12px; }
   .drv-tile-rank { width:20px; text-align:center; font-weight:800; color:var(--gray-400); font-size:calc(12px * var(--fs)); flex-shrink:0; }
   .drv-tile-veh { background:var(--gray-100); color:var(--gray-700); font-weight:800; font-size:calc(12px * var(--fs)); border-radius:6px; padding:5px 9px; flex-shrink:0; white-space:nowrap; }
-  .drv-tile-name { flex:1; min-width:0; font-weight:700; font-size:calc(15px * var(--fs)); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* Wrap onto a second line (e.g. last name) instead of truncating with an ellipsis or
+     bleeding past the tile — a name is more useful whole than clipped. */
+  .drv-tile-name { flex:1; min-width:0; font-weight:700; font-size:calc(15px * var(--fs)); line-height:1.2; white-space:normal; overflow-wrap:break-word; }
   .drv-tile-score { font-weight:900; font-size:calc(17px * var(--fs)); border-radius:8px; padding:5px 11px; color:#1f2937; flex-shrink:0; }
   .drv-averages { display:flex; flex-direction:column; gap:10px; }
   .drv-avg-title { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-600); margin-bottom:2px; }
