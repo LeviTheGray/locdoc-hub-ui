@@ -1,19 +1,20 @@
 /**
  * Wix Custom Element — Wednesday Morning Meeting  (<wednesday-meeting>)
  *
- * A single responsive presenter page for the weekly Wednesday meeting. Five tabs:
+ * A single responsive presenter page for the weekly Wednesday meeting. Six tabs:
  *   1. Upcoming Meeting   — WeeklyAgendas (Date / Topic / Tech Spotlight) for the
  *                           next 4 weeks + a "Today's Spotlight is …" star banner.
  *   2. Cleanliness Report — the full report (week selector, summary tiles,
  *                           per-branch vehicle/office breakdown, non-submitters,
  *                           weekly trend chart, photo gallery) — ported so it
  *                           lives inside this tab.
- *   3. Driver Scorecard   — laid out like the weekly Driver Safety Scorecard PDF:
- *                           big fleet score, color-scaled per-driver bars, and a
- *                           rule-averages panel.
- *   4. Tech Spotlight     — one tech/week: Problem + Solution on top, then photos
+ *   3. Driver Scorecard   — ranked tiles (vehicle #, name, color-scaled score) plus
+ *                           a rule-averages panel, mirroring the cleanliness ranked list.
+ *   4. Core Values        — 2 values picked at random (seeded by the meeting week, so
+ *                           the pick is stable all week) with a discussion prompt.
+ *   5. Tech Spotlight     — one tech/week: Problem + Solution on top, then photos
  *                           with descriptions; click a photo to enlarge for the room.
- *   5. Agenda             — this week's presentation (embedded Google Slides, titled
+ *   6. Agenda             — this week's presentation (embedded Google Slides, titled
  *                           with the week's topic from WeeklyAgendas).
  *
  * Presenter mode (▶ button / it requests fullscreen) scales everything up for
@@ -24,12 +25,14 @@
  * demo content. Editor: tag `wednesday-meeting`, element ID `wednesdayMeeting`.
  */
 
-import { TOKENS } from './tokens.js';
+import { TOKENS, ensureMaterialSymbols } from './tokens.js';
+import { CORE_VALUES, CORE_VALUES_CSS } from './core-values-data.js';
 
 const TABS = [
   { key: 'upcoming',    label: 'Upcoming Meeting', icon: '📅' },
   { key: 'cleanliness', label: 'Cleanliness',      icon: '🧹' },
   { key: 'drivers',     label: 'Driver Scorecard', icon: '🚐' },
+  { key: 'corevalues',  label: 'Core Values',      icon: '💎' },
   { key: 'spotlight',   label: 'Tech Spotlight',   icon: '🔧' },
   { key: 'agenda',      label: 'Agenda',           icon: '📋' },
 ];
@@ -128,6 +131,7 @@ function getAuditWeekStart(date) { const d = new Date(date); let b = (d.getDay()
 function fmtWeek(iso) { return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function fmtDate(iso) { const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? String(iso || '') : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
 function avg(arr) { return arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null; }
+function avgOverExpected(scores, expected) { return expected ? Math.round(scores.reduce((a, b) => a + b, 0) / expected) : null; }
 function clScoreColor(s) { return s >= 80 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--red)'; }
 // 0–100 red→green scale (matches the PDF's color legend).
 function drvColor(s) {
@@ -136,6 +140,21 @@ function drvColor(s) {
   if (s >= 50) return '#facc15'; if (s >= 25) return '#fb923c'; return '#ef4444';
 }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
+// Deterministic pick of 2 distinct core values, seeded by the meeting week so the whole room
+// sees the same pair and reopening the tab mid-meeting doesn't reshuffle them.
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; return h >>> 0; }
+function seededRandom(seed) {
+  let t = seed;
+  return function () { t += 0x6D2B79F5; let r = Math.imul(t ^ (t >>> 15), 1 | t); r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r; return ((r ^ (r >>> 14)) >>> 0) / 4294967296; };
+}
+function pickWeeklyCoreValues(seedKey) {
+  const n = CORE_VALUES.length;
+  const rand = seededRandom(hashStr(String(seedKey || '')));
+  const i = Math.floor(rand() * n);
+  let j = Math.floor(rand() * (n - 1));
+  if (j >= i) j++;
+  return [CORE_VALUES[i], CORE_VALUES[j]];
+}
 
 const STYLES = `
   *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
@@ -218,18 +237,19 @@ const STYLES = `
   .cl-thumb .cap { font-size:10px; padding:6px 8px; color:var(--gray-600); }
   .muted { color:var(--gray-400); font-size:13px; font-style:italic; }
 
-  /* Driver scorecard (PDF style) */
+  /* Driver scorecard — ranked tiles (mirrors the cleanliness sub-list style) */
   .drv-top { display:flex; align-items:stretch; gap:16px; margin-bottom:20px; flex-wrap:wrap; }
   .drv-fleet { background:#fef9c3; border:1.5px solid #fde68a; border-radius:var(--radius); padding:16px 28px; text-align:center; min-width:180px; display:flex; flex-direction:column; justify-content:center; }
   .drv-fleet .v { font-size:calc(48px * var(--fs)); font-weight:900; line-height:1; }
   .drv-fleet .l { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-600); margin-top:6px; font-weight:700; }
   .drv-grid { display:grid; grid-template-columns:1fr 220px; gap:16px; align-items:start; }
-  .drv-bars-card { background:#fff; border:1.5px solid var(--gray-200); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px 16px; overflow-x:auto; }
-  .drv-bars { display:flex; align-items:flex-end; gap:8px; height:calc(300px * var(--fs)); padding-top:20px; min-width:min-content; }
-  .drv-col { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; min-width:44px; }
-  .drv-bar { width:34px; border-radius:5px 5px 0 0; position:relative; }
-  .drv-bar .v { position:absolute; top:-16px; left:-8px; right:-8px; text-align:center; font-size:10px; font-weight:700; color:var(--gray-600); }
-  .drv-name { font-size:10px; color:var(--gray-500); margin-top:8px; text-align:center; max-width:60px; line-height:1.2; }
+  .drv-tiles-card { background:#fff; border:1.5px solid var(--gray-200); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; }
+  .drv-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
+  .drv-tile { display:flex; align-items:center; gap:12px; border:1.5px solid var(--gray-200); border-radius:10px; padding:10px 12px; }
+  .drv-tile-rank { width:20px; text-align:center; font-weight:800; color:var(--gray-400); font-size:calc(12px * var(--fs)); flex-shrink:0; }
+  .drv-tile-veh { background:var(--gray-100); color:var(--gray-700); font-weight:800; font-size:calc(12px * var(--fs)); border-radius:6px; padding:5px 9px; flex-shrink:0; white-space:nowrap; }
+  .drv-tile-name { flex:1; min-width:0; font-weight:700; font-size:calc(15px * var(--fs)); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .drv-tile-score { font-weight:900; font-size:calc(17px * var(--fs)); border-radius:8px; padding:5px 11px; color:#1f2937; flex-shrink:0; }
   .drv-averages { display:flex; flex-direction:column; gap:10px; }
   .drv-avg-title { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-600); margin-bottom:2px; }
   .drv-avg { border-radius:10px; padding:10px 14px; color:#1f2937; }
@@ -237,6 +257,12 @@ const STYLES = `
   .drv-avg .v { font-size:calc(22px * var(--fs)); font-weight:900; }
   .drv-legend { display:flex; align-items:center; gap:0; margin-top:14px; font-size:11px; color:var(--gray-500); }
   .drv-legend i { width:38px; height:12px; display:inline-block; }
+
+  /* Core Values tab — reuses the mosaic tile styling from core-values-data.js, 2-up. */
+  ${CORE_VALUES_CSS}
+  .cv-grid.values-grid { grid-template-columns:repeat(2, minmax(0,1fr)) !important; }
+  .cv-question { margin-top:12px; padding-top:14px; border-top:1px dashed var(--gray-200); font-size:calc(13px * var(--fs)); font-weight:700; color:var(--primary); }
+  @media (max-width:640px) { .cv-grid.values-grid { grid-template-columns:1fr !important; } }
 
   /* Tech Spotlight */
   .sp-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
@@ -280,7 +306,7 @@ const STYLES = `
      unreachable — no scrollbar, no wheel, stuck. Scrolling is now possible but should stay
      mostly unnecessary: the photo grid below is sized so a spotlight fits one screen. */
   :host([data-present]) {
-    --fs:1.6;
+    --fs:2;
     height:100%; overflow-y:auto; background:var(--gray-50);
   }
   /* Belt and braces: presenter mode is driven by [data-present], but the user can also land in
@@ -307,16 +333,26 @@ const STYLES = `
 
   /* Most of the deck is fixed px and ignores --fs, so these stay 10–13px on a 65" screen and are
      unreadable from the back of the room. Scale the labels that actually appear while presenting. */
-  :host([data-present]) .tab { font-size:17px; padding:12px 20px; }
-  :host([data-present]) .tab .tab-icon { font-size:21px; }
-  :host([data-present]) .header .week { font-size:17px; }
-  :host([data-present]) .sp-tech { font-size:19px; }
-  :host([data-present]) .sp-ps h4 { font-size:16px; }
-  :host([data-present]) th { font-size:16px; padding:16px 20px; }
-  :host([data-present]) td { font-size:19px; padding:16px 20px; }
+  :host([data-present]) .tab { font-size:22px; padding:14px 22px; }
+  :host([data-present]) .tab .tab-icon { font-size:26px; }
+  :host([data-present]) .header .week { font-size:20px; }
+  :host([data-present]) .sp-tech { font-size:23px; }
+  :host([data-present]) .sp-ps h4 { font-size:19px; }
+  :host([data-present]) th { font-size:19px; padding:18px 20px; }
+  :host([data-present]) td { font-size:23px; padding:18px 20px; }
   :host([data-present]) .list-row .meta,
   :host([data-present]) .muted,
-  :host([data-present]) .placeholder { font-size:18px; }
+  :host([data-present]) .placeholder { font-size:21px; }
+  /* Cleanliness/driver labels that are also fixed px, unreadable from the back at 65". */
+  :host([data-present]) .cl-chip,
+  :host([data-present]) .cl-pill,
+  :host([data-present]) .cl-tb-label,
+  :host([data-present]) .cl-sub-types,
+  :host([data-present]) .cl-stat .l,
+  :host([data-present]) .drv-avg .l { font-size:16px; }
+  :host([data-present]) .cl-sub-rank,
+  :host([data-present]) .cl-nonsub-label,
+  :host([data-present]) .cl-sub-label { font-size:15px; }
 
   @media (max-width:760px) {
     .drv-grid { grid-template-columns:1fr; } .drv-averages { flex-direction:row; flex-wrap:wrap; }
@@ -347,6 +383,7 @@ class WednesdayMeeting extends HTMLElement {
   }
 
   connectedCallback() {
+    ensureMaterialSymbols();
     this._renderShell();
     if (this.hasAttribute('init-data')) this._applyData(this.getAttribute('init-data'));
     else this._render();
@@ -506,6 +543,7 @@ class WednesdayMeeting extends HTMLElement {
     if (key === 'upcoming')    return this._upcomingPanel();
     if (key === 'cleanliness') return this._cleanlinessPanel();
     if (key === 'drivers')     return this._driversPanel();
+    if (key === 'corevalues')  return this._coreValuesPanel();
     if (key === 'spotlight')   return this._spotlightPanel();
     if (key === 'agenda')      return this._agendaPanel();
     return '';
@@ -564,9 +602,12 @@ class WednesdayMeeting extends HTMLElement {
 
     const submitted = c.participants.filter(p => byEmp[p._id]).length;
     const expected = c.participants.length;
-    const overall = avg(weekAudits.map(a => a.score));
-    const vAvg = avg(weekAudits.map(a => a.vehicleScore).filter(s => s != null));
-    const oAvg = avg(weekAudits.map(a => a.officeScore).filter(s => s != null));
+    const owesVAll = c.participants.filter(p => p.owesVehicle).length;
+    const owesOAll = c.participants.filter(p => p.owesOffice).length;
+    // 0% baseline: average over expected headcount, not just submitters, so non-submittals pull it down.
+    const overall = avgOverExpected(weekAudits.map(a => a.score), expected);
+    const vAvg = avgOverExpected(weekAudits.map(a => a.vehicleScore).filter(s => s != null), owesVAll);
+    const oAvg = avgOverExpected(weekAudits.map(a => a.officeScore).filter(s => s != null), owesOAll);
     const tiles = [
       { v: `${submitted}/${expected}`, l: 'Submitted' },
       { v: overall == null ? '—' : overall + '%', l: 'Avg Score' },
@@ -598,10 +639,10 @@ class WednesdayMeeting extends HTMLElement {
 
       return `<div class="cl-card">
         <div class="cl-branch-head"><div class="cl-branch-name">🏢 ${esc(b)}</div><div class="cl-pill ${pill}">${sub}/${exp} submitted</div></div>
-        <div class="cl-typebars">${this._clTypeBar('🚐 Vehicle', avg(vScores), owesV)}${this._clTypeBar('🏢 Office', avg(oScores), owesO)}</div>
+        <div class="cl-typebars">${this._clTypeBar('🚐 Vehicle', avgOverExpected(vScores, owesV), owesV)}${this._clTypeBar('🏢 Office', avgOverExpected(oScores, owesO), owesO)}</div>
         ${subList}
         ${nonsubs.length
-          ? `<div class="cl-nonsub-label">Did not submit (${nonsubs.length})</div><div class="cl-chips">${nonsubs.map(m => `<span class="cl-chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? 'VEH+OFF' : m.owesVehicle ? 'VEH' : 'OFF'}</span></span>`).join('')}</div>`
+          ? `<div class="cl-nonsub-label">Did not submit (${nonsubs.length})</div><div class="cl-chips">${nonsubs.map(m => `<span class="cl-chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? '🚐🏢' : m.owesVehicle ? '🚐' : '🏢'}</span></span>`).join('')}</div>`
           : `<div class="cl-all-in">✓ Everyone in this branch submitted</div>`}
       </div>`;
     }).join('');
@@ -631,17 +672,21 @@ class WednesdayMeeting extends HTMLElement {
     return `<div class="cl-typebar"><div class="cl-tb-label"><span>${label}</span><span>${score}%</span></div><div class="cl-track"><div class="cl-fill" style="width:${score}%;background:${clScoreColor(score)}"></div></div></div>`;
   }
 
-  // ---- Tab 3: Driver Scorecard (PDF style) ----
+  // ---- Tab 3: Driver Scorecard (ranked tiles) ----
   _driversPanel() {
     const d = this._data;
     const rows = (d.drivers || []).slice().sort((a, b) => b.score - a.score);
     const m = d.driversMeta || {};
     if (!rows.length) return `<div class="panel-title">Driver Scorecard</div><div class="placeholder">Weekly Driver Safety Scorecard loads here from the DriverScores collection.</div>`;
     const ra = m.ruleAverages || {};
-    const bars = rows.map(r => {
-      const h = Math.max(2, (r.score / 100) * 100);
-      return `<div class="drv-col"><div style="flex:1;display:flex;align-items:flex-end;width:100%;justify-content:center"><div class="drv-bar" style="height:${h}%;background:${drvColor(r.score)}"><div class="v">${(r.score).toFixed(1)}</div></div></div>
-        <div class="drv-name">${esc(r.vehicle ? r.vehicle + ' · ' : '')}${esc(r.name)}</div></div>`;
+    const tiles = rows.map((r, i) => {
+      const c = drvColor(r.score);
+      return `<div class="drv-tile">
+        <span class="drv-tile-rank">${i + 1}</span>
+        ${r.vehicle ? `<span class="drv-tile-veh">#${esc(r.vehicle)}</span>` : ''}
+        <span class="drv-tile-name">${esc(r.name)}</span>
+        <span class="drv-tile-score" style="background:${c}33;border:1.5px solid ${c}">${(r.score).toFixed(1)}</span>
+      </div>`;
     }).join('');
     const avgs = RULES.map(rule => { const v = ra[rule.key]; return `<div class="drv-avg" style="background:${drvColor(v)}33;border:1.5px solid ${drvColor(v)}"><div class="l">${rule.label}</div><div class="v">${v == null ? '—' : Number(v).toFixed(2)}</div></div>`; }).join('');
     return `
@@ -651,15 +696,32 @@ class WednesdayMeeting extends HTMLElement {
         <div class="drv-fleet"><div class="v">${m.fleetScore == null ? '—' : Number(m.fleetScore).toFixed(1)}</div><div class="l">Average Fleet Score</div></div>
       </div>
       <div class="drv-grid">
-        <div class="drv-bars-card">
-          <div class="drv-bars">${bars}</div>
+        <div class="drv-tiles-card">
+          <div class="drv-tiles">${tiles}</div>
           <div class="drv-legend"><span>0</span><i style="background:#ef4444"></i><i style="background:#fb923c"></i><i style="background:#facc15"></i><i style="background:#4ade80"></i><i style="background:#16a34a"></i><span>100</span></div>
         </div>
         <div class="drv-averages"><div class="drv-avg-title">Averages</div>${avgs}</div>
       </div>`;
   }
 
-  // ---- Tab 4: Tech Spotlight ----
+  // ---- Tab 4: Core Values (2 random-per-week, with a discussion prompt) ----
+  _coreValuesPanel() {
+    const seed = this._data.weekOf || todayISO();
+    const picks = pickWeeklyCoreValues(seed);
+    const cards = picks.map(v => `
+      <div class="value-card">
+        <span class="value-glyph material-symbols-outlined">${v.icon}</span>
+        <div class="value-title"><span class="vt-trait">${esc(v.trait)}</span><span class="vt-name">${esc(v.value)}</span></div>
+        <p class="value-desc">${esc(v.desc)}</p>
+        <div class="cv-question">How have you seen this core value in action this week?</div>
+      </div>`).join('');
+    return `
+      <div class="panel-title">Core Values</div>
+      <div class="panel-sub">This week's spotlighted values — share an example.</div>
+      <div class="values-grid cv-grid">${cards}</div>`;
+  }
+
+  // ---- Tab 5: Tech Spotlight ----
   _spotlightPanel() {
     const items = this._data.spotlight || [];
     if (!items.length) return `<div class="panel-title">Tech Spotlight</div>
@@ -694,7 +756,7 @@ class WednesdayMeeting extends HTMLElement {
         <button class="deck-btn" data-entry-nav="1" ${i === items.length - 1 ? 'disabled' : ''}>Next →</button></div>` : ''}`;
   }
 
-  // ---- Tab 5: Agenda (this week's presentation) ----
+  // ---- Tab 6: Agenda (this week's presentation) ----
   _agendaPanel() {
     const a = this._data.agendaSlide || {};
     const hasTopic = !!(a.title && String(a.title).trim());

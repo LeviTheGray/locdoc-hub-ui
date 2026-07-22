@@ -271,7 +271,7 @@ class CleanlinessReport extends HTMLElement {
           <div class="typebars">${this._typeBar('🚐 Vehicle', avgOverExpected(vScores, owesV), owesV)}${this._typeBar('🏢 Office', avgOverExpected(oScores, owesO), owesO)}</div>
           ${subList}
           ${nonsubs.length
-            ? `<div class="nonsub-label">Did not submit (${nonsubs.length})</div><div class="chips">${nonsubs.map(m => `<span class="chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? 'VEH+OFF' : m.owesVehicle ? 'VEH' : 'OFF'}</span></span>`).join('')}</div>`
+            ? `<div class="nonsub-label">Did not submit (${nonsubs.length})</div><div class="chips">${nonsubs.map(m => `<span class="chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? '🚐🏢' : m.owesVehicle ? '🚐' : '🏢'}</span></span>`).join('')}</div>`
             : `<div class="all-in">✓ Everyone in this branch submitted</div>`}
           ${this._renderCommonAreas(b, week)}
         </div>`;
