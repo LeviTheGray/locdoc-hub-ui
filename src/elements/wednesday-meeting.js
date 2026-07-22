@@ -237,26 +237,29 @@ const STYLES = `
   .cl-thumb .cap { font-size:10px; padding:6px 8px; color:var(--gray-600); }
   .muted { color:var(--gray-400); font-size:13px; font-style:italic; }
 
-  /* Driver scorecard — ranked tiles (mirrors the cleanliness sub-list style) */
-  .drv-top { display:flex; align-items:stretch; gap:16px; margin-bottom:20px; flex-wrap:wrap; }
-  .drv-fleet { background:#fef9c3; border:1.5px solid #fde68a; border-radius:var(--radius); padding:16px 28px; text-align:center; min-width:180px; display:flex; flex-direction:column; justify-content:center; }
-  .drv-fleet .v { font-size:calc(48px * var(--fs)); font-weight:900; line-height:1; }
+  /* Driver scorecard — fleet + rule averages in one row (same tile language, fleet a bit
+     bigger), then square name/score tiles below with a hover-only vehicle # tooltip. */
+  .drv-top { display:flex; align-items:stretch; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .drv-fleet { background:#fef9c3; border:1.5px solid #fde68a; border-radius:var(--radius); padding:16px 30px; text-align:center; min-width:190px; display:flex; flex-direction:column; justify-content:center; }
+  .drv-fleet .v { font-size:calc(54px * var(--fs)); font-weight:900; line-height:1; }
   .drv-fleet .l { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-600); margin-top:6px; font-weight:700; }
-  .drv-grid { display:grid; grid-template-columns:1fr 220px; gap:16px; align-items:start; }
-  .drv-tiles-card { background:#fff; border:1.5px solid var(--gray-200); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; }
-  .drv-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
-  .drv-tile { display:flex; align-items:center; gap:12px; border:1.5px solid var(--gray-200); border-radius:10px; padding:10px 12px; }
-  .drv-tile-rank { width:20px; text-align:center; font-weight:800; color:var(--gray-400); font-size:calc(12px * var(--fs)); flex-shrink:0; }
-  .drv-tile-veh { background:var(--gray-100); color:var(--gray-700); font-weight:800; font-size:calc(12px * var(--fs)); border-radius:6px; padding:5px 9px; flex-shrink:0; white-space:nowrap; }
-  /* Wrap onto a second line (e.g. last name) instead of truncating with an ellipsis or
-     bleeding past the tile — a name is more useful whole than clipped. */
-  .drv-tile-name { flex:1; min-width:0; font-weight:700; font-size:calc(15px * var(--fs)); line-height:1.2; white-space:normal; overflow-wrap:break-word; }
-  .drv-tile-score { font-weight:900; font-size:calc(17px * var(--fs)); border-radius:8px; padding:5px 11px; color:#1f2937; flex-shrink:0; }
-  .drv-averages { display:flex; flex-direction:column; gap:10px; }
-  .drv-avg-title { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-600); margin-bottom:2px; }
-  .drv-avg { border-radius:10px; padding:10px 14px; color:#1f2937; }
+  .drv-avgs-row { display:flex; gap:10px; flex-wrap:wrap; flex:1; }
+  .drv-avg { border-radius:10px; padding:10px 14px; color:#1f2937; flex:1; min-width:118px; }
   .drv-avg .l { font-size:12px; font-weight:600; opacity:.85; }
-  .drv-avg .v { font-size:calc(22px * var(--fs)); font-weight:900; }
+  .drv-avg .v { font-size:calc(20px * var(--fs)); font-weight:900; }
+  .drv-tiles-card { background:#fff; border:1.5px solid var(--gray-200); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; }
+  .drv-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .drv-tile { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; aspect-ratio:1; border:1.5px solid var(--gray-200); border-radius:12px; padding:16px 10px; }
+  .drv-tile-rank { position:absolute; top:8px; left:10px; font-weight:800; font-size:calc(11px * var(--fs)); color:var(--gray-400); }
+  .drv-tile-veh-icon { position:absolute; top:6px; right:8px; font-size:calc(13px * var(--fs)); opacity:.55; cursor:default; }
+  /* Wraps onto a second line (e.g. last name) instead of truncating — a name is more useful
+     whole than clipped. */
+  .drv-tile-name { font-weight:700; font-size:calc(14px * var(--fs)); line-height:1.2; white-space:normal; overflow-wrap:break-word; }
+  .drv-tile-score { font-weight:900; font-size:calc(19px * var(--fs)); border-radius:8px; padding:4px 12px; color:#1f2937; }
+  /* Podium accents for 1st/2nd/3rd — color only, keeps focus on the score badge. */
+  .drv-tile.medal-1 { background:linear-gradient(180deg,#fff8dc,#fff); border-color:#d4af37; box-shadow:0 0 0 1px #d4af37 inset; }
+  .drv-tile.medal-2 { background:linear-gradient(180deg,#f5f6f7,#fff); border-color:#a7adb4; box-shadow:0 0 0 1px #a7adb4 inset; }
+  .drv-tile.medal-3 { background:linear-gradient(180deg,#fbe8da,#fff); border-color:#b3703f; box-shadow:0 0 0 1px #b3703f inset; }
   .drv-legend { display:flex; align-items:center; gap:0; margin-top:14px; font-size:11px; color:var(--gray-500); }
   .drv-legend i { width:38px; height:12px; display:inline-block; }
 
@@ -356,14 +359,13 @@ const STYLES = `
   :host([data-present]) .cl-nonsub-label,
   :host([data-present]) .cl-sub-label { font-size:15px; }
   /* Driver tiles: --fs scales the name/score text but the tile itself doesn't grow to match,
-     so a scaled name gets crushed to a single letter behind the score badge. Widen the tiles
-     (fewer per row) so scaled text actually fits. */
-  :host([data-present]) .drv-tiles { grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px; }
-  :host([data-present]) .drv-tile { padding:14px 18px; gap:16px; }
+     so a scaled name gets crushed against the tile edge. Widen the tiles (fewer per row) so
+     scaled text actually fits. */
+  :host([data-present]) .drv-tiles { grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; }
+  :host([data-present]) .drv-tile-veh-icon { font-size:20px; top:10px; right:12px; }
 
   @media (max-width:760px) {
-    .drv-grid { grid-template-columns:1fr; } .drv-averages { flex-direction:row; flex-wrap:wrap; }
-    .drv-avg { flex:1; min-width:120px; }
+    .drv-avgs-row { flex-direction:column; }
   }
   @media (max-width:640px) {
     .main { padding:24px 14px 48px; } .sp-ps { grid-template-columns:1fr; }
@@ -572,8 +574,7 @@ class WednesdayMeeting extends HTMLElement {
     const horizon = (() => { const d = new Date(); d.setDate(d.getDate() + 28); return d.toISOString().slice(0, 10); })();
     const rows = allRows.filter(r => r.date && r.date >= today && r.date <= horizon);
     return `
-      <div class="panel-title">Upcoming Meeting</div>
-      <div class="panel-sub">Topics for the next 4 weeks and which tech has the spotlight.</div>
+      <div class="panel-sub" style="margin-top:0">Topics for the next 4 weeks and which tech has the spotlight.</div>
       ${spotlight ? `<div class="spotlight-banner">⭐ Today's Spotlight is: <b>${esc(spotlight)}</b></div>` : ''}
       <div class="card" style="overflow:hidden">
         ${rows.length ? `<table>
@@ -593,8 +594,7 @@ class WednesdayMeeting extends HTMLElement {
   _cleanlinessPanel() {
     const c = this._data.cleanliness;
     if (!c || !Array.isArray(c.participants) || !c.participants.length) {
-      return `<div class="panel-title">Cleanliness Report</div>
-        <div class="placeholder">📊 The full cleanliness report loads here once the page Velo feeds
+      return `<div class="placeholder">📊 The full cleanliness report loads here once the page Velo feeds
           <b>{ cleanliness: { participants, audits } }</b>.</div>`;
     }
     const audits = Array.isArray(c.audits) ? c.audits : [];
@@ -667,7 +667,6 @@ class WednesdayMeeting extends HTMLElement {
     weekAudits.forEach(a => Object.keys(a.photoUrls || {}).forEach(slot => { const url = a.photoUrls[slot]; if (url) thumbs.push(`<div class="cl-thumb" data-zoom="${esc(url)}" data-cap="${esc(a.name + ' · ' + slot)}"><img src="${esc(url)}" alt=""><div class="cap">${esc(a.name)} · ${esc(slot)}</div></div>`); }));
 
     return `
-      <div class="panel-title">Cleanliness Report</div>
       <div class="cl-toolbar"><label>Week:</label><select data-cl-week>${weeks.map(w => `<option value="${w}"${w === week ? ' selected' : ''}>Week of ${fmtWeek(w)}${w === getAuditWeekStart(new Date()) ? ' (current)' : ''}</option>`).join('')}</select></div>
       <div class="cl-stats">${tiles.map(t => `<div class="cl-stat"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join('')}</div>
       ${branchHtml}
@@ -686,30 +685,28 @@ class WednesdayMeeting extends HTMLElement {
     const d = this._data;
     const rows = (d.drivers || []).slice().sort((a, b) => b.score - a.score);
     const m = d.driversMeta || {};
-    if (!rows.length) return `<div class="panel-title">Driver Scorecard</div><div class="placeholder">Weekly Driver Safety Scorecard loads here from the DriverScores collection.</div>`;
+    if (!rows.length) return `<div class="placeholder">Weekly Driver Safety Scorecard loads here from the DriverScores collection.</div>`;
     const ra = m.ruleAverages || {};
+    const medalCls = ['medal-1', 'medal-2', 'medal-3'];
     const tiles = rows.map((r, i) => {
       const c = drvColor(r.score);
-      return `<div class="drv-tile">
+      return `<div class="drv-tile ${medalCls[i] || ''}">
         <span class="drv-tile-rank">${i + 1}</span>
-        ${r.vehicle ? `<span class="drv-tile-veh">#${esc(r.vehicle)}</span>` : ''}
+        ${r.vehicle ? `<span class="drv-tile-veh-icon" title="Vehicle #${esc(r.vehicle)}">🚐</span>` : ''}
         <span class="drv-tile-name">${esc(r.name)}</span>
         <span class="drv-tile-score" style="background:${c}33;border:1.5px solid ${c}">${(r.score).toFixed(1)}</span>
       </div>`;
     }).join('');
     const avgs = RULES.map(rule => { const v = ra[rule.key]; return `<div class="drv-avg" style="background:${drvColor(v)}33;border:1.5px solid ${drvColor(v)}"><div class="l">${rule.label}</div><div class="v">${v == null ? '—' : Number(v).toFixed(2)}</div></div>`; }).join('');
     return `
-      <div class="panel-title">Driver Safety Scorecard</div>
       <div class="panel-sub">${m.dateRange ? 'Week of ' + esc(m.dateRange) : 'Weekly driver safety scores.'}</div>
       <div class="drv-top">
         <div class="drv-fleet"><div class="v">${m.fleetScore == null ? '—' : Number(m.fleetScore).toFixed(1)}</div><div class="l">Average Fleet Score</div></div>
+        <div class="drv-avgs-row">${avgs}</div>
       </div>
-      <div class="drv-grid">
-        <div class="drv-tiles-card">
-          <div class="drv-tiles">${tiles}</div>
-          <div class="drv-legend"><span>0</span><i style="background:#ef4444"></i><i style="background:#fb923c"></i><i style="background:#facc15"></i><i style="background:#4ade80"></i><i style="background:#16a34a"></i><span>100</span></div>
-        </div>
-        <div class="drv-averages"><div class="drv-avg-title">Averages</div>${avgs}</div>
+      <div class="drv-tiles-card">
+        <div class="drv-tiles">${tiles}</div>
+        <div class="drv-legend"><span>0</span><i style="background:#ef4444"></i><i style="background:#fb923c"></i><i style="background:#facc15"></i><i style="background:#4ade80"></i><i style="background:#16a34a"></i><span>100</span></div>
       </div>`;
   }
 
@@ -719,10 +716,9 @@ class WednesdayMeeting extends HTMLElement {
     if (this._cvShowAll) {
       return `
         <div class="sp-head">
-          <div class="panel-title" style="margin:0">Core Values — All 8</div>
+          <div class="panel-sub" style="margin:0">The full list, for meetings that go over all of them.</div>
           <button class="deck-btn" data-cv-toggle>← This week's picks</button>
         </div>
-        <div class="panel-sub">The full list, for meetings that go over all of them.</div>
         <div class="values-grid">${CORE_VALUES.map(valueCardHTML).join('')}</div>`;
     }
     const seed = this._data.weekOf || todayISO();
@@ -736,18 +732,16 @@ class WednesdayMeeting extends HTMLElement {
       </div>`).join('');
     return `
       <div class="sp-head">
-        <div class="panel-title" style="margin:0">Core Values</div>
+        <div class="panel-sub" style="margin:0">This week's spotlighted values — share an example.</div>
         <button class="deck-btn" data-cv-toggle>See all 8 →</button>
       </div>
-      <div class="panel-sub">This week's spotlighted values — share an example.</div>
       <div class="values-grid cv-grid">${cards}</div>`;
   }
 
   // ---- Tab 5: Tech Spotlight ----
   _spotlightPanel() {
     const items = this._data.spotlight || [];
-    if (!items.length) return `<div class="panel-title">Tech Spotlight</div>
-      <div class="placeholder">A tech submits Problem / Solution + photos; their spotlight shows here.</div>`;
+    if (!items.length) return `<div class="placeholder">A tech submits Problem / Solution + photos; their spotlight shows here.</div>`;
     const i = Math.max(0, Math.min(this._slide, items.length - 1));
     const s = items[i];
     // A tech can present a Google Slides deck instead of photos. When they do, embed the slides in
@@ -765,7 +759,6 @@ class WednesdayMeeting extends HTMLElement {
       ? `<div class="slide-embed"><iframe src="${esc(slideSrc)}" allowfullscreen></iframe></div>`
       : `<div class="sp-photos" data-zoom-group>${photoHtml || '<div class="placeholder">No photos yet.</div>'}</div>`;
     return `
-      <div class="panel-title">Tech Spotlight</div>
       <div class="sp-head"><div class="sp-tech">${esc(s.tech || '')}</div>${items.length > 1 ? `<div class="panel-sub" style="margin:0">${i + 1} of ${items.length} · ← →</div>` : ''}</div>
       ${s.title ? `<div class="panel-title" style="font-size:calc(20px * var(--fs));margin-bottom:16px">${esc(s.title)}</div>` : ''}
       <div class="sp-ps">
@@ -787,8 +780,7 @@ class WednesdayMeeting extends HTMLElement {
       ? `${esc(a.title)}${a.date ? ` · ${esc(fmtDate(a.date))}` : ''}`
       : 'Set the next meeting’s topic and Google Slides link in the Weekly Agendas table.';
     return `
-      <div class="panel-title">Agenda — next meeting</div>
-      <div class="panel-sub">${sub}</div>
+      <div class="panel-sub" style="margin-top:0">${sub}</div>
       ${src
         ? `<div class="slide-embed"><iframe src="${esc(src)}" allowfullscreen></iframe></div>`
         : `<div class="card"><div class="placeholder">${hasTopic
