@@ -26,7 +26,7 @@
  */
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
-import { CORE_VALUES, CORE_VALUES_CSS } from './core-values-data.js';
+import { CORE_VALUES, CORE_VALUES_CSS, valueCardHTML } from './core-values-data.js';
 
 const TABS = [
   { key: 'upcoming',    label: 'Upcoming Meeting', icon: '📅' },
@@ -376,6 +376,7 @@ class WednesdayMeeting extends HTMLElement {
     this._clWeek = null;    // selected cleanliness week
     this._lightbox = null;  // { items: [{ url, caption }], i } | null
     this._shell = false;
+    this._cvShowAll = false; // Core Values tab: false = this week's 2 picks, true = all 8
     this._isOperations = false; // from init-data — unlocks the Agenda-tab slides editor
     this._agendaBusy = false;   // saving the agenda link
     this._agendaMsg = null;     // { ok, text } feedback after a save
@@ -438,7 +439,7 @@ class WednesdayMeeting extends HTMLElement {
     }
     const i = TABS.findIndex(t => t.key === this._tab);
     const ni = i + dir;
-    if (ni >= 0 && ni < TABS.length) { this._tab = TABS[ni].key; this._slide = 0; this._render(); }
+    if (ni >= 0 && ni < TABS.length) { this._tab = TABS[ni].key; this._slide = 0; this._cvShowAll = false; this._render(); }
   }
 
   _renderShell() {
@@ -459,7 +460,7 @@ class WednesdayMeeting extends HTMLElement {
 
     root.addEventListener('click', (e) => {
       const tab = e.target.closest('[data-tab]');
-      if (tab) { this._tab = tab.getAttribute('data-tab'); this._slide = 0; this._render(); return; }
+      if (tab) { this._tab = tab.getAttribute('data-tab'); this._slide = 0; this._cvShowAll = false; this._render(); return; }
       const entry = e.target.closest('[data-entry-nav]');
       if (entry) { this._slide += Number(entry.getAttribute('data-entry-nav')); this._render(); return; }
       const lbNav = e.target.closest('[data-lb-nav]');
@@ -476,6 +477,7 @@ class WednesdayMeeting extends HTMLElement {
       }
       if (e.target.closest('[data-lightbox-close]') || e.target.hasAttribute('data-lightbox-overlay')) { this._lightbox = null; this._render(); return; }
       if (e.target.closest('[data-save-agenda]')) { this._saveAgenda(); return; }
+      if (e.target.closest('[data-cv-toggle]')) { this._cvShowAll = !this._cvShowAll; this._render(); return; }
       const link = e.target.closest('[data-nav]');
       if (link) { this.dispatchEvent(new CustomEvent('navigate', { detail: { key: link.getAttribute('data-nav') }, bubbles: true, composed: true })); return; }
       if (e.target.closest('[data-present-toggle]')) this._togglePresent(e.target.closest('[data-present-toggle]'));
@@ -704,8 +706,18 @@ class WednesdayMeeting extends HTMLElement {
       </div>`;
   }
 
-  // ---- Tab 4: Core Values (2 random-per-week, with a discussion prompt) ----
+  // ---- Tab 4: Core Values (2 random-per-week, with a discussion prompt; "See all" for
+  // business meetings that review the full list) ----
   _coreValuesPanel() {
+    if (this._cvShowAll) {
+      return `
+        <div class="sp-head">
+          <div class="panel-title" style="margin:0">Core Values — All 8</div>
+          <button class="deck-btn" data-cv-toggle>← This week's picks</button>
+        </div>
+        <div class="panel-sub">The full list, for meetings that go over all of them.</div>
+        <div class="values-grid">${CORE_VALUES.map(valueCardHTML).join('')}</div>`;
+    }
     const seed = this._data.weekOf || todayISO();
     const picks = pickWeeklyCoreValues(seed);
     const cards = picks.map(v => `
@@ -716,7 +728,10 @@ class WednesdayMeeting extends HTMLElement {
         <div class="cv-question">How have you seen this core value in action this week?</div>
       </div>`).join('');
     return `
-      <div class="panel-title">Core Values</div>
+      <div class="sp-head">
+        <div class="panel-title" style="margin:0">Core Values</div>
+        <button class="deck-btn" data-cv-toggle>See all 8 →</button>
+      </div>
       <div class="panel-sub">This week's spotlighted values — share an example.</div>
       <div class="values-grid cv-grid">${cards}</div>`;
   }
