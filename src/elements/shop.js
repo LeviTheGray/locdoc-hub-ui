@@ -171,6 +171,12 @@ class LocDocShop extends HTMLElement {
       this._orders = Array.isArray(data.orders) ? data.orders : [];
       this._isAdmin = Boolean(data.isAdmin);
       this._canSelectNoLogo = Boolean(data.canSelectNoLogo);
+      // A dropped connection / forced re-login used to wipe an in-progress cart with no way back —
+      // restore whatever this member last saved before we render, so the page isn't blank again.
+      if (!this._cart.length) {
+        this._cart = this._loadCart();
+        if (this._cart.length) this._requestQuote();
+      }
       this._render();
     }
 
@@ -190,6 +196,7 @@ class LocDocShop extends HTMLElement {
         this._serverTotal = null;
         this._msg = 'Order submitted. Points have been deducted.';
         this._err = '';
+        this._clearSavedCart();
         if (Number.isFinite(data.points)) this._points -= Number(data.points);
       } else {
         this._err = data.error || 'Submit failed.';
@@ -229,6 +236,7 @@ class LocDocShop extends HTMLElement {
     this._err = '';
     this._msg = '';
     this._sel = null;
+    this._saveCart();
     this._requestQuote();
     this._render();
   }
@@ -236,8 +244,36 @@ class LocDocShop extends HTMLElement {
   _removeLine(id) {
     this._cart = this._cart.filter((l) => l._id !== id);
     if (this._editingId === id) this._editingId = null;
+    this._saveCart();
     this._requestQuote();
     this._render();
+  }
+
+  // ---- cart persistence ------------------------------------------------------
+  // A dropped connection or a forced re-login previously lost the whole cart, since it only ever
+  // lived in memory. localStorage survives both; it's keyed per member so a shared computer can't
+  // hand one person's in-progress cart to the next.
+  _cartStorageKey() {
+    const email = (this._user && this._user.email) || 'anon';
+    return `locdocShopCart:${email}`;
+  }
+
+  _saveCart() {
+    try {
+      localStorage.setItem(this._cartStorageKey(), JSON.stringify(this._cart));
+    } catch (e) { /* private browsing / storage disabled — the cart just won't survive a reload */ }
+  }
+
+  _loadCart() {
+    try {
+      const raw = localStorage.getItem(this._cartStorageKey());
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+
+  _clearSavedCart() {
+    try { localStorage.removeItem(this._cartStorageKey()); } catch (e) { /* nothing to clear */ }
   }
 
   _editLine(id) {
@@ -422,12 +458,17 @@ class LocDocShop extends HTMLElement {
     // member was charged $62.71 — so show the fees and the real line total next to the input.
     const lines = items.map((it) => {
       const price = isSanmar ? it.clothingPrice : it.unitPrice;
-      const label = it.itemNumber || it.name || it.productName || 'Item';
+      const label = it.itemNumber || it.name || it.productName || (it.link ? 'Amazon item' : 'Item');
       // Logo + logo color + placement were missing here — an admin couldn't see what to embroider.
       const logoBit = it.logo
         ? `Logo: ${it.logo}${it.logoColor ? ` (${it.logoColor})` : ''}${it.logoPlacement ? ` · ${it.logoPlacement}` : ''}`
         : '';
-      const bits = [it.size || it.hatSize || it.pantSize, it.color, logoBit, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
+      const bits = [it.size || it.hatSize || it.pantSize, it.color, it.width, logoBit, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
+      // Amazon lines have no itemNumber/name — without the link button the admin had no way to see
+      // what was actually ordered, so it's required here, not just a nice-to-have.
+      const linkBtn = it.link
+        ? `<a class="btn" href="${this._escA(it.link)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none">View on Amazon</a>`
+        : '';
       // No line total here: with a single-line order it would just repeat the order total. The
       // itemised fees and the summary below carry that information without saying it twice.
       return `
@@ -436,6 +477,7 @@ class LocDocShop extends HTMLElement {
             <b>${this._esc(label)}</b>
             <span>${this._esc(bits.join(' · '))}</span>
           </div>
+          ${linkBtn}
           <label style="display:flex;align-items:center;gap:6px">
             <span style="color:var(--gray-400);font-size:12px">Unit price $</span>
             <input type="number" step="0.01" min="0" style="width:90px"

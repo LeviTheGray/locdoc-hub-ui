@@ -12,7 +12,9 @@
  *
  * Data handoff (mirrors cleanliness-audit):
  *   • Velo → element :  init-data    { currentUser:{ name, email }, scheduledDate,
- *                                     admin, techs:[{ name, email }] } | { error }
+ *                                     admin, techs:[{ name, email }],
+ *                                     draft:{ title, problem, solution, slidesUrl, photos } | null }
+ *                                     | { error }
  *
  * ADMIN OVERRIDE: when init-data says `admin`, the form can be switched to file a spotlight FOR
  * another tech on ANY date, bypassing the schedule gate — the escape hatch for a tech who was
@@ -23,10 +25,17 @@
  *                       submit-result { ok:true } | { ok:false, error }   (carries _ts)
  *   • element → Velo :  'upload-photo'    { id, dataUrl }
  *                       'submit-spotlight'{ title, problem, solution, slidesUrl, photos }
+ *                       'save-draft'      { title, problem, solution, slidesUrl, photos }
  *                       'navigate'        { key }
  *
  * SLIDES: a tech may paste a Google Slides link instead of (or as well as) photos. When present,
  * the Wednesday deck embeds the slides in place of the photo grid. Stored as `slidesUrl`.
+ *
+ * DRAFT AUTOSAVE: title/problem/solution/slides changes are debounced (~2s) and sent as
+ * 'save-draft', plus fired immediately after each successful photo upload (the expensive-to-redo
+ * part). Best-effort and silent — a failed autosave doesn't interrupt the tech; init-data's `draft`
+ * pre-fills the form if they come back after a refresh/interruption. Not sent while the admin
+ * override panel is active (out of scope — that flow files on someone else's behalf).
  *
  * Editor setup: Add → Embed Code → Custom Element → this file, tag
  * `tech-spotlight-submit`, element ID `techSpotlightSubmit`.
@@ -112,6 +121,7 @@ class TechSpotlightSubmit extends HTMLElement {
     this._forTech = '';         // picked tech's email
     this._forDate = '';         // picked ISO date
     this._draft = {};           // title/problem/solution kept across re-renders
+    this._draftTimer = null;    // debounce handle for autosaving _draft to the backend
   }
 
   connectedCallback() {
@@ -137,6 +147,24 @@ class TechSpotlightSubmit extends HTMLElement {
     this._upcoming = Array.isArray(p.upcoming) ? p.upcoming : [];
     this._error = p.error || null;
     this._loaded = true;
+    // Pre-fill from a previously autosaved (or already-submitted) row so an interrupted session
+    // picks up where it left off, rather than starting blank.
+    if (p.draft) {
+      this._draft = {
+        title: p.draft.title || '', problem: p.draft.problem || '',
+        solution: p.draft.solution || '', slides: p.draft.slidesUrl || '',
+      };
+      if (Array.isArray(p.draft.photos)) {
+        for (const ph of p.draft.photos) {
+          if (!ph || !ph.url) continue;
+          const id = `p${++this._seq}`;
+          this._order.push(id);
+          this._photos[id] = ph.url;
+          this._previews[id] = ph.url;
+          this._captions[id] = ph.caption || '';
+        }
+      }
+    }
     // An admin who isn't scheduled has nothing to do here EXCEPT override, so open it for them
     // rather than showing the "you're not scheduled" dead end.
     if (this._admin && !this._scheduledDate) this._override = true;
@@ -169,8 +197,11 @@ class TechSpotlightSubmit extends HTMLElement {
       if (e.target.id === 'for-date') { this._forDate = e.target.value; this._syncSubmit(); }
     });
     this.shadowRoot.addEventListener('input', (e) => {
-      const id = e.target && e.target.getAttribute && e.target.getAttribute('data-cap-id');
-      if (id) this._captions[id] = e.target.value;
+      const capId = e.target && e.target.getAttribute && e.target.getAttribute('data-cap-id');
+      if (capId) { this._captions[capId] = e.target.value; this._scheduleDraftSave(); return; }
+      if (e.target && ['title', 'problem', 'solution', 'slides'].includes(e.target.id)) {
+        this._scheduleDraftSave();
+      }
     });
   }
 
@@ -287,6 +318,27 @@ class TechSpotlightSubmit extends HTMLElement {
     this._draft = { title: v('title'), problem: v('problem'), solution: v('solution'), slides: v('slides') };
   }
 
+  // Debounced autosave: keeps typed content (and already-uploaded photos) from being lost to a
+  // refresh, crash, or accidental navigation. Not sent during the admin override — that flow files
+  // on someone else's behalf and isn't what a draft-recovery pre-fill is for.
+  _scheduleDraftSave() {
+    if (this._override) return;
+    this._saveDraft();
+    if (this._draftTimer) clearTimeout(this._draftTimer);
+    this._draftTimer = setTimeout(() => this._dispatchDraftSave(), 2000);
+  }
+
+  _dispatchDraftSave() {
+    if (this._override || this._done) return;
+    const photos = this._order.filter(id => this._photos[id])
+      .map(id => ({ url: this._photos[id], caption: (this._captions[id] || '').trim() }));
+    const d = this._draft;
+    this.dispatchEvent(new CustomEvent('save-draft', {
+      detail: { title: d.title || '', problem: d.problem || '', solution: d.solution || '', slidesUrl: d.slides || '', photos },
+      bubbles: true, composed: true,
+    }));
+  }
+
   _fmtDate(iso) {
     const d = new Date((iso || '') + 'T00:00:00');
     return isNaN(d) ? String(iso || '')
@@ -379,8 +431,13 @@ class TechSpotlightSubmit extends HTMLElement {
     let r = {}; try { r = JSON.parse(json) || {}; } catch (e) { return; }
     if (!r.id) return;
     this._pendingPhotos[r.id] = false;
-    if (r.url) this._photos[r.id] = r.url;
-    else { this._removePhoto(r.id); this._showMsg('A photo failed to upload — please try again.', 'err'); }
+    if (r.url) {
+      this._photos[r.id] = r.url;
+      // Fire immediately rather than waiting on the debounce — a photo is the expensive part to
+      // redo, so get it referenced durably as soon as it lands.
+      this._saveDraft();
+      this._dispatchDraftSave();
+    } else { this._removePhoto(r.id); this._showMsg('A photo failed to upload — please try again.', 'err'); }
     // Release the queue so the next photo starts, whether this one succeeded or not.
     const waiter = this._uploadWaiters[r.id];
     if (waiter) { delete this._uploadWaiters[r.id]; waiter(); }
