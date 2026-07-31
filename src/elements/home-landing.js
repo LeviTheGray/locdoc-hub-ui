@@ -106,7 +106,7 @@ const DESTINATIONS = [
   },
   { 
     key: 'handbook', 
-    href: 'https://drive.google.com/file/d/1vyxYUy9d72Q55s3kofm9NRTSoVuvCk9R/view?usp=sharing', 
+    href: 'https://docs.google.com/document/d/1wgM14nPVP4hY6bFs5fF-4J0Hc6oWmSVqiHJtTQYNzHQ/edit?tab=t.0',
     icon: 'menu_book',
     name: 'Employee Handbook',
     desc: 'Read the official employee handbook for general rules and expectations.',

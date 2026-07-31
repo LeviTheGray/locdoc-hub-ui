@@ -150,6 +150,9 @@ class LocDocShop extends HTMLElement {
     this._adminLoaded = false;
     this._adminPreview = null;   // { points, charged, delta, total } — the pending decision
     this._adminConfirmed = null; // the prices that preview was computed from
+    this._stockFormOpen = false;
+    this._stockLines = [{ description: '', quantity: 1, unitPrice: '', link: '' }];
+    this._copyMsg = '';
   }
 
   connectedCallback() {
@@ -341,6 +344,7 @@ class LocDocShop extends HTMLElement {
       this._adminOrder = { order: data.order, items: data.items || [], charged: Number(data.charged) || 0 };
       this._adminPreview = null;   // a freshly opened order has no pending decision
       this._adminConfirmed = null;
+      this._copyMsg = '';
     } else if (kind === 'preview') {
       // Nothing has been written yet — this is the decision step.
       this._adminPreview = {
@@ -366,6 +370,11 @@ class LocDocShop extends HTMLElement {
       this._adminMsg = `Order cancelled — ${data.refunded} pts refunded.`;
       this._adminOrder = null;
       this._adminRefresh();
+    } else if (kind === 'stock') {
+      this._adminMsg = 'Stock order created — it\'s in the queue.';
+      this._stockFormOpen = false;
+      this._stockLines = [{ description: '', quantity: 1, unitPrice: '', link: '' }];
+      this._adminRefresh();
     }
     this._renderPanel();
   }
@@ -374,6 +383,7 @@ class LocDocShop extends HTMLElement {
 
   _adminPanel() {
     if (this._adminOrder) return this._adminReview();
+    if (this._stockFormOpen) return this._stockOrderForm();
 
     if (!this._adminLoaded && !this._adminBusy) { this._adminRefresh(); }
 
@@ -382,11 +392,12 @@ class LocDocShop extends HTMLElement {
       <div class="ord">
         <div class="h">
           <b>${this._esc(o.orderNumber || 'Order')}</b>
+          ${o.isStockOrder ? '<span class="st" style="background:var(--gray-600)">Stock</span>' : ''}
           <span class="st">${this._esc(displayStatus(o.status))}</span>
         </div>
         <div class="m">
-          ${this._esc(o.memberName || o.memberEmail || '')} · ${this._esc(o.shopSource)} ·
-          ${o.charged} pts${o.pricingConfirmed ? '' : ' (estimated)'} · ${this._fmtDate(o.submittedDate)}
+          ${o.isStockOrder ? `Stock order · created by ${this._esc(o.memberName || o.memberEmail || '')}` : this._esc(o.memberName || o.memberEmail || '')} · ${this._esc(o.shopSource)} ·
+          ${o.isStockOrder ? `${o.totalPoints} pts (company budget)` : `${o.charged} pts${o.pricingConfirmed ? '' : ' (estimated)'}`} · ${this._fmtDate(o.submittedDate)}
         </div>
         <div class="row" style="margin-top:8px">
           <button class="btn" data-review="${this._escA(o._id)}">Review</button>
@@ -408,12 +419,51 @@ class LocDocShop extends HTMLElement {
       </div>`;
 
     return `
-      <h2>Order queue</h2>
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <h2>Order queue</h2>
+        <button class="btn" data-stock-new>+ New stock order</button>
+      </div>
       ${this._adminMsg ? `<div class="ok">${this._esc(this._adminMsg)}</div>` : ''}
       ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
       ${this._adminLoaded ? filterUI : ''}
       ${this._adminBusy && !this._adminLoaded ? '<div class="empty">Loading orders…</div>' : ''}
       ${this._adminLoaded && !shown.length ? '<div class="empty">No orders match this filter.</div>' : rows}`;
+  }
+
+  // A stock order draws from the company budget, not a member's points — this is a separate, simpler
+  // form from the member cart: description/qty/price per line, no logo/size/catalog fields.
+  _stockOrderForm() {
+    const lines = this._stockLines.map((l, i) => `
+      <div class="line" data-stock-line="${i}">
+        <div class="t" style="flex:1;display:flex;flex-direction:column;gap:6px">
+          <input type="text" placeholder="Item description" data-stock-desc="${i}" value="${this._escA(l.description)}">
+          <div class="row">
+            <input type="number" min="1" step="1" placeholder="Qty" style="width:80px" data-stock-qty="${i}" value="${this._escA(l.quantity)}">
+            <input type="number" min="0" step="0.01" placeholder="Unit price $" style="width:120px" data-stock-price="${i}" value="${this._escA(l.unitPrice)}">
+            <input type="text" placeholder="Link (optional)" style="flex:1" data-stock-link="${i}" value="${this._escA(l.link)}">
+          </div>
+        </div>
+        ${this._stockLines.length > 1 ? `<button class="btn" data-stock-remove="${i}" style="background:transparent;color:var(--gray-600)">✕</button>` : ''}
+      </div>`).join('');
+
+    return `
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <h2>New stock order</h2>
+        <button class="btn" data-stock-back style="background:transparent;color:var(--gray-600)">← Back to queue</button>
+      </div>
+      <div class="m" style="color:var(--gray-400);font-size:12px;margin-bottom:12px">
+        Comes out of the company budget — no points are charged. Goes into the same queue to be priced and ordered.
+      </div>
+      ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
+      ${lines}
+      <div class="row" style="margin-top:8px">
+        <button class="btn" data-stock-add style="background:transparent;color:var(--gray-600)">+ Add item</button>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button class="btn" data-stock-submit ${this._adminBusy ? 'disabled' : ''}>
+          ${this._adminBusy ? 'Creating…' : 'Create stock order'}
+        </button>
+      </div>`;
   }
 
   // The queue, narrowed by the status filter. "Completed" is treated as "Received" (displayStatus),
@@ -510,14 +560,20 @@ class LocDocShop extends HTMLElement {
 
     return `
       <div class="row" style="justify-content:space-between;align-items:baseline">
-        <h2>${this._esc(order.orderNumber || 'Order')} · ${this._esc(order.shopSource)}</h2>
-        <button class="btn" data-admin-back>← Back to queue</button>
+        <h2>${this._esc(order.orderNumber || 'Order')} · ${this._esc(order.shopSource)}${order.isStockOrder ? ' · <span class="st" style="background:var(--gray-600)">Stock</span>' : ''}</h2>
+        <div class="row">
+          <button class="btn" data-copy-email style="background:var(--gray-600)">Copy for email</button>
+          <button class="btn" data-admin-back>← Back to queue</button>
+        </div>
       </div>
       <div class="m" style="color:var(--gray-400);font-size:13px;margin-bottom:12px">
-        ${this._esc(order.memberName || order.memberEmail || '')} · status <b>${this._esc(displayStatus(order.status))}</b> ·
-        charged <b>${charged} pts</b>${order.pricingConfirmed ? '' : ' (member\'s estimate)'}
+        ${order.isStockOrder
+          ? `Stock order · created by ${this._esc(order.memberName || order.memberEmail || '')} · status <b>${this._esc(displayStatus(order.status))}</b> · company budget, no points charged`
+          : `${this._esc(order.memberName || order.memberEmail || '')} · status <b>${this._esc(displayStatus(order.status))}</b> ·
+        charged <b>${charged} pts</b>${order.pricingConfirmed ? '' : ' (member\'s estimate)'}`}
       </div>
 
+      ${this._copyMsg ? `<div class="ok">${this._esc(this._copyMsg)}</div>` : ''}
       ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
 
       <h2 style="margin-top:8px">Line items</h2>
@@ -634,6 +690,58 @@ class LocDocShop extends HTMLElement {
     return { fees, feeTotal, total, points: Math.round(total), ourTotal };
   }
 
+  // Plain-text layout of every line (using whatever price is currently typed in, same figures the
+  // totals below are computed from) plus the order total — built to paste straight into an email.
+  _copyForEmail(btn) {
+    const { order, items } = this._adminOrder;
+    const isSanmar = this._adminSource() === 'sanmar';
+    const panel = btn.closest('[data-panel]') || this.shadowRoot.querySelector('[data-panel]');
+
+    let total = 0;
+    const rows = items.map((it) => {
+      const input = panel ? panel.querySelector(`[data-price="${it._id}"]`) : null;
+      const p = this._adminPriceLine(it, input ? input.value : undefined);
+      total += p.total;
+      const label = it.itemNumber || it.name || it.productName || (it.link ? 'Amazon item' : 'Item');
+      const bits = [it.size || it.hatSize || it.pantSize, it.color, it.width].filter(Boolean);
+      const desc = bits.length ? `${label} (${bits.join(', ')})` : label;
+      const qty = Number(p.quantity) || 1;
+      return `${desc} — Qty ${qty} — $${Number(isSanmar ? p.unitPrice : p.unitPrice).toFixed(2)} each — $${p.total.toFixed(2)}`;
+    });
+
+    const text = [
+      `${order.orderNumber || 'Order'}${order.isStockOrder ? ' (Stock)' : ''}`,
+      ...rows,
+      `Total: $${total.toFixed(2)}`,
+    ].join('\n');
+
+    this._copyText(text);
+  }
+
+  _copyText(text) {
+    const done = () => { this._copyMsg = 'Copied to clipboard.'; this._renderPanel(); };
+    const fail = () => { this._copyMsg = ''; this._adminErr = 'Could not copy — select and copy manually.'; this._renderPanel(); };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fail);
+      return;
+    }
+    // Fallback for environments without the async Clipboard API.
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      done();
+    } catch (err) {
+      fail();
+    }
+  }
+
   _adminFeesBlock(panel) {
     const { fees, feeTotal } = this._adminMoney(panel);
     if (!fees.length) return '';
@@ -675,6 +783,8 @@ class LocDocShop extends HTMLElement {
   }
 
   _wireAdmin(panel) {
+    if (this._stockFormOpen) { this._wireStockForm(panel); return; }
+
     panel.querySelectorAll('[data-review]').forEach((b) =>
       b.addEventListener('click', () => this._adminSend('admin-review', { orderId: b.getAttribute('data-review') })));
 
@@ -694,6 +804,7 @@ class LocDocShop extends HTMLElement {
       this._adminPreview = null;
       this._adminConfirmed = null;
       this._adminErr = '';
+      this._copyMsg = '';
       this._renderPanel();
     });
 
@@ -736,6 +847,59 @@ class LocDocShop extends HTMLElement {
         orderId: this._adminOrder.order._id,
         reason: reason ? reason.value.trim() : '',
       });
+    });
+
+    const copyBtn = panel.querySelector('[data-copy-email]');
+    if (copyBtn) copyBtn.addEventListener('click', () => this._copyForEmail(copyBtn));
+
+    const stockNew = panel.querySelector('[data-stock-new]');
+    if (stockNew) stockNew.addEventListener('click', () => {
+      this._stockFormOpen = true;
+      this._adminErr = '';
+      this._adminMsg = '';
+      this._renderPanel();
+    });
+  }
+
+  _wireStockForm(panel) {
+    const back = panel.querySelector('[data-stock-back]');
+    if (back) back.addEventListener('click', () => { this._stockFormOpen = false; this._adminErr = ''; this._renderPanel(); });
+
+    panel.querySelectorAll('[data-stock-desc]').forEach((i) =>
+      i.addEventListener('input', () => { this._stockLines[Number(i.getAttribute('data-stock-desc'))].description = i.value; }));
+    panel.querySelectorAll('[data-stock-qty]').forEach((i) =>
+      i.addEventListener('input', () => { this._stockLines[Number(i.getAttribute('data-stock-qty'))].quantity = i.value; }));
+    panel.querySelectorAll('[data-stock-price]').forEach((i) =>
+      i.addEventListener('input', () => { this._stockLines[Number(i.getAttribute('data-stock-price'))].unitPrice = i.value; }));
+    panel.querySelectorAll('[data-stock-link]').forEach((i) =>
+      i.addEventListener('input', () => { this._stockLines[Number(i.getAttribute('data-stock-link'))].link = i.value; }));
+
+    panel.querySelectorAll('[data-stock-remove]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this._stockLines.splice(Number(b.getAttribute('data-stock-remove')), 1);
+        this._renderPanel();
+      }));
+
+    const add = panel.querySelector('[data-stock-add]');
+    if (add) add.addEventListener('click', () => {
+      this._stockLines.push({ description: '', quantity: 1, unitPrice: '', link: '' });
+      this._renderPanel();
+    });
+
+    const submit = panel.querySelector('[data-stock-submit]');
+    if (submit) submit.addEventListener('click', () => {
+      const lines = this._stockLines.map((l) => ({
+        description: (l.description || '').trim(),
+        quantity: Number(l.quantity) || 0,
+        unitPrice: Number(l.unitPrice) || 0,
+        link: (l.link || '').trim(),
+      }));
+      if (lines.some((l) => !l.description || !(l.quantity > 0))) {
+        this._adminErr = 'Every item needs a description and a quantity greater than zero.';
+        this._renderPanel();
+        return;
+      }
+      this._adminSend('admin-stock', { lines });
     });
   }
 
