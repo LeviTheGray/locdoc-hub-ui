@@ -226,6 +226,11 @@ const STYLES = `
   .cl-sub-types { font-size:11px; color:var(--gray-400); margin-left:auto; }
   .cl-sub-score { font-weight:800; font-size:calc(14px * var(--fs)); min-width:44px; text-align:right; }
   .cl-nonsub-label { font-size:12px; font-weight:700; color:#991b1b; margin:6px 0 8px; }
+  .cl-pto-row { display:flex; align-items:center; gap:10px; font-size:calc(13px * var(--fs)); padding:6px 0; border-bottom:1px solid var(--gray-100); }
+  .cl-pto-row:last-child { border-bottom:none; }
+  .cl-pto-name { font-weight:600; }
+  .cl-pto-branch { color:var(--gray-400); font-size:12px; }
+  .cl-pto-by { color:var(--gray-400); font-size:11px; margin-left:auto; }
   .cl-chart { display:flex; align-items:flex-end; gap:10px; height:160px; padding-top:18px; }
   .cl-bar-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; min-width:22px; }
   .cl-bar { width:100%; max-width:44px; border-radius:6px 6px 0 0; position:relative; }
@@ -358,6 +363,8 @@ const STYLES = `
   :host([data-present]) .cl-sub-rank,
   :host([data-present]) .cl-nonsub-label,
   :host([data-present]) .cl-sub-label { font-size:15px; }
+  :host([data-present]) .cl-pto-branch,
+  :host([data-present]) .cl-pto-by { font-size:16px; }
   /* Driver tiles: --fs scales the name/score text but the tile itself doesn't grow to match,
      so a scaled name gets crushed against the tile edge. Widen the tiles (fewer per row) so
      scaled text actually fits. */
@@ -607,16 +614,25 @@ class WednesdayMeeting extends HTMLElement {
     const week = this._clWeek
       || (audits.some(a => a.weekStart === thisWeek) ? thisWeek : (auditWeeks[0] || thisWeek));
     const weekAudits = audits.filter(a => a.weekStart === week);
-    const byEmp = {}; weekAudits.forEach(a => { byEmp[a.employeeId] = a; });
+    // A PTO week is a CleanlinessAudit row with isPTO:true instead of real scores (see
+    // cleanliness-report.js / backend/cleanliness.web.js) — split it out before building byEmp,
+    // same as the standalone report, so it never reads as a submission and never drags a score down.
+    const ptoAudits = weekAudits.filter(a => a.isPTO);
+    const realAudits = weekAudits.filter(a => !a.isPTO);
+    const byEmp = {}; realAudits.forEach(a => { byEmp[a.employeeId] = a; });
+    const ptoIds = new Set(ptoAudits.map(a => a.employeeId));
+    const activeParticipants = c.participants.filter(p => !ptoIds.has(p._id));
 
-    const submitted = c.participants.filter(p => byEmp[p._id]).length;
-    const expected = c.participants.length;
-    const owesVAll = c.participants.filter(p => p.owesVehicle).length;
-    const owesOAll = c.participants.filter(p => p.owesOffice).length;
-    // 0% baseline: average over expected headcount, not just submitters, so non-submittals pull it down.
-    const overall = avgOverExpected(weekAudits.map(a => a.score), expected);
-    const vAvg = avgOverExpected(weekAudits.map(a => a.vehicleScore).filter(s => s != null), owesVAll);
-    const oAvg = avgOverExpected(weekAudits.map(a => a.officeScore).filter(s => s != null), owesOAll);
+    const submitted = activeParticipants.filter(p => byEmp[p._id]).length;
+    const expected = activeParticipants.length;
+    const owesVAll = activeParticipants.filter(p => p.owesVehicle).length;
+    const owesOAll = activeParticipants.filter(p => p.owesOffice).length;
+    // 0% baseline: average over expected headcount, not just submitters, so non-submittals pull it
+    // down. PTO'd people are excluded from `activeParticipants` entirely, so they don't count
+    // toward the denominator either.
+    const overall = avgOverExpected(realAudits.map(a => a.score), expected);
+    const vAvg = avgOverExpected(realAudits.map(a => a.vehicleScore).filter(s => s != null), owesVAll);
+    const oAvg = avgOverExpected(realAudits.map(a => a.officeScore).filter(s => s != null), owesOAll);
     const tiles = [
       { v: `${submitted}/${expected}`, l: 'Submitted' },
       { v: overall == null ? '—' : overall + '%', l: 'Avg Score' },
@@ -624,9 +640,25 @@ class WednesdayMeeting extends HTMLElement {
       { v: oAvg == null ? '—' : oAvg + '%', l: 'Office Avg' },
     ];
 
+    // PTO for the week — shown as its own section (read-only here; marking happens on the
+    // standalone report / audit page) so an absence reads as confirmed exempt, not a data error.
+    const ptoHtml = ptoAudits.length ? `<div class="cl-card">
+      <div class="cl-branch-head"><div class="cl-branch-name">🌴 PTO this week</div></div>
+      ${ptoAudits.map(a => {
+        const emp = c.participants.find(p => p._id === a.employeeId);
+        const name = emp ? emp.name : a.name;
+        const branch = emp ? emp.branch : a.branch;
+        return `<div class="cl-pto-row">
+          <span class="cl-pto-name">${esc(name)}</span>
+          <span class="cl-pto-branch">${esc(branch || 'Unassigned')}</span>
+          ${a.markedByName ? `<span class="cl-pto-by">marked by ${esc(a.markedByName)}</span>` : ''}
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
     // Branches
     const branches = {};
-    c.participants.forEach(p => { const b = p.branch || 'Unassigned'; (branches[b] = branches[b] || []).push(p); });
+    activeParticipants.forEach(p => { const b = p.branch || 'Unassigned'; (branches[b] = branches[b] || []).push(p); });
     const branchHtml = Object.keys(branches).sort().map(b => {
       const members = branches[b];
       const vScores = [], oScores = []; let owesV = 0, owesO = 0;
@@ -658,17 +690,18 @@ class WednesdayMeeting extends HTMLElement {
 
     // Trend chart
     const byWeek = {};
-    audits.forEach(a => { if (a.weekStart) (byWeek[a.weekStart] = byWeek[a.weekStart] || []).push(a.score); });
+    audits.forEach(a => { if (a.weekStart && !a.isPTO) (byWeek[a.weekStart] = byWeek[a.weekStart] || []).push(a.score); });
     const chartWeeks = Object.keys(byWeek).sort().slice(-12);
     const chartHtml = chartWeeks.length ? chartWeeks.map(w => { const a = avg(byWeek[w]); return `<div class="cl-bar-col"><div class="cl-bar" style="height:${Math.max(a, 2)}%;background:${clScoreColor(a)}"><div class="cl-bar-val">${a}%</div></div><div class="cl-bar-label">${fmtWeek(w)}</div></div>`; }).join('') : '<div class="muted">No audits submitted yet.</div>';
 
     // Gallery
     const thumbs = [];
-    weekAudits.forEach(a => Object.keys(a.photoUrls || {}).forEach(slot => { const url = a.photoUrls[slot]; if (url) thumbs.push(`<div class="cl-thumb" data-zoom="${esc(url)}" data-cap="${esc(a.name + ' · ' + slot)}"><img src="${esc(url)}" alt=""><div class="cap">${esc(a.name)} · ${esc(slot)}</div></div>`); }));
+    realAudits.forEach(a => Object.keys(a.photoUrls || {}).forEach(slot => { const url = a.photoUrls[slot]; if (url) thumbs.push(`<div class="cl-thumb" data-zoom="${esc(url)}" data-cap="${esc(a.name + ' · ' + slot)}"><img src="${esc(url)}" alt=""><div class="cap">${esc(a.name)} · ${esc(slot)}</div></div>`); }));
 
     return `
       <div class="cl-toolbar"><label>Week:</label><select data-cl-week>${weeks.map(w => `<option value="${w}"${w === week ? ' selected' : ''}>Week of ${fmtWeek(w)}${w === getAuditWeekStart(new Date()) ? ' (current)' : ''}</option>`).join('')}</select></div>
       <div class="cl-stats">${tiles.map(t => `<div class="cl-stat"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join('')}</div>
+      ${ptoHtml}
       ${branchHtml}
       <div class="cl-card"><div class="cl-card-title">Average Score by Week (all branches)</div><div class="cl-chart">${chartHtml}</div></div>
       <div class="cl-card"><div class="cl-card-title">Photos This Week</div><div class="cl-gallery" data-zoom-group>${thumbs.length ? thumbs.join('') : '<div class="muted">No photos for this week.</div>'}</div></div>

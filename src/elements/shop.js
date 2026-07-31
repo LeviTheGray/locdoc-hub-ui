@@ -703,7 +703,10 @@ class LocDocShop extends HTMLElement {
       const p = this._adminPriceLine(it, input ? input.value : undefined);
       total += p.total;
       const label = it.itemNumber || it.name || it.productName || (it.link ? 'Amazon item' : 'Item');
-      const bits = [it.size || it.hatSize || it.pantSize, it.color, it.width].filter(Boolean);
+      const logoBit = it.logo
+        ? `Logo: ${it.logo}${it.logoColor ? ` (${it.logoColor})` : ''}${it.logoPlacement ? ` · ${it.logoPlacement}` : ''}`
+        : '';
+      const bits = [it.size || it.hatSize || it.pantSize, it.color, it.width, logoBit].filter(Boolean);
       const desc = bits.length ? `${label} (${bits.join(', ')})` : label;
       const qty = Number(p.quantity) || 1;
       return `${desc} — Qty ${qty} — $${Number(isSanmar ? p.unitPrice : p.unitPrice).toFixed(2)} each — $${p.total.toFixed(2)}`;
