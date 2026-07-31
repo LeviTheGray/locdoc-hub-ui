@@ -6,12 +6,24 @@
  * backend, submitted/success views. See CUSTOM-ELEMENTS.md for the recipe.
  *
  * Data handoff:
- *   • Velo → element :  init-data     { currentUser, existingReport } | { error }
+ *   • Velo → element :  init-data     { currentUser, existingReport, meScope, team } | { error }
  *                       photo-result  { id, url } | { id, error }     (correlated by id)
  *                       submit-result { ok:true, report } | { ok:false, error }
+ *                       pto-result    { ok, error? }  (carries a _ts nonce; a successful mark/
+ *                                       unmark is followed by a fresh init-data with the updated
+ *                                       team roster — this attribute only carries busy/error state)
  *   • element → Velo :  'upload-photo' { detail: { id, slot, dataUrl } }
  *                       'submit-audit' { detail: record }
  *                       'navigate'     { detail: { key:'hub' } }
+ *                       'mark-pto'     { detail: { employeeId, weekStart } }
+ *                       'unmark-pto'   { detail: { employeeId, weekStart } }
+ *
+ * meScope (manager-only): the manager's raw Employees.manager value ("Operations" = every
+ * department, otherwise a comma-separated department list). `team` is the roster of THIS week's
+ * audit-owing employees in that scope (excluding the manager) with their current status —
+ * `'pending' | 'submitted' | 'pto'` — same convention as cleanliness-report.js: PTO is a
+ * CleanlinessAudit row with isPTO:true, not a separate collection. Only rendered when meScope is
+ * non-blank, i.e. non-managers never see this section.
  *
  * Editor: Add → Embed Code → Custom Element → source = this file,
  * tag name `cleanliness-audit`, element ID `cleanlinessAudit`.
@@ -131,10 +143,27 @@ const STYLES = `
   @media (max-width: 600px) {
     .main { padding: 16px 12px; } .form-card { padding: 20px 16px; } .success-card { padding: 40px 24px; } .pf { width: 150px; }
   }
+  .team-card { background: #fff; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); margin-bottom: 20px; }
+  .team-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .team-title { font-size: 15px; font-weight: 700; }
+  .team-err { font-size: 12px; color: #991b1b; margin: 8px 0; }
+  .team-row { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--gray-100); }
+  .team-row:last-child { border-bottom: none; }
+  .team-name { font-weight: 600; }
+  .team-branch { color: var(--gray-400); font-size: 12px; }
+  .team-badge { font-size: 11px; font-weight: 700; border-radius: 100px; padding: 3px 10px; margin-left: auto; }
+  .team-badge.submitted { background: #dcfce7; color: #14532d; }
+  .team-badge.pto { background: #dbeafe; color: #1e3a8a; }
+  .team-badge.pending { background: #fef9c3; color: #78350f; }
+  .team-by { color: var(--gray-400); font-size: 11px; }
+  .team-btn { font-size: 11px; font-weight: 700; border: none; border-radius: 100px; padding: 5px 12px; cursor: pointer; }
+  .team-btn.mark { background: var(--primary); color: #fff; }
+  .team-btn.remove { background: #fee2e2; color: #991b1b; }
+  .team-btn:disabled { opacity: .5; cursor: default; }
 `;
 
 class CleanlinessAudit extends HTMLElement {
-  static get observedAttributes() { return ['init-data', 'photo-result', 'submit-result']; }
+  static get observedAttributes() { return ['init-data', 'photo-result', 'submit-result', 'pto-result']; }
 
   constructor() {
     super();
@@ -147,6 +176,10 @@ class CleanlinessAudit extends HTMLElement {
     this._answers = { vehicle: {}, office: {} };
     this._photos = {};
     this._photoPending = {};
+    this._meScope = '';
+    this._team = [];
+    this._ptoBusy = false;
+    this._ptoErr = '';
   }
 
   connectedCallback() {
@@ -159,6 +192,7 @@ class CleanlinessAudit extends HTMLElement {
     if (name === 'init-data') this._applyInit(value);
     if (name === 'photo-result') this._applyPhotoResult(value);
     if (name === 'submit-result') this._applySubmitResult(value);
+    if (name === 'pto-result') this._applyPtoResult(value);
   }
 
   _$(id) { return this.shadowRoot.getElementById(id); }
@@ -174,6 +208,7 @@ class CleanlinessAudit extends HTMLElement {
       <main class="main">
         <div id="loadingState" class="loading-state">Loading…</div>
         <div id="viewMine" style="display:none">
+          <div id="teamPtoSection"></div>
           <div id="submittedView" style="display:none">
             <div class="submitted-banner"><div class="check">&#10003;</div>
               <div><div class="msg">Audit submitted for this week</div><div class="sub" id="submittedSubtext"></div></div>
@@ -220,7 +255,11 @@ class CleanlinessAudit extends HTMLElement {
       const pf = e.target.closest('[data-pf-section]');
       if (pf) { this._setAnswer(pf.getAttribute('data-pf-section'), pf.getAttribute('data-pf-key'), pf.getAttribute('data-pf-val') === 'true'); return; }
       const drop = e.target.closest('[data-photo-trigger]');
-      if (drop) { const inp = this._$(drop.getAttribute('data-photo-trigger')); if (inp) inp.click(); }
+      if (drop) { const inp = this._$(drop.getAttribute('data-photo-trigger')); if (inp) inp.click(); return; }
+      const markBtn = e.target.closest('[data-action="mark-pto"]');
+      if (markBtn) { this._sendPto('mark-pto', markBtn.getAttribute('data-emp')); return; }
+      const unmarkBtn = e.target.closest('[data-action="unmark-pto"]');
+      if (unmarkBtn) { this._sendPto('unmark-pto', unmarkBtn.getAttribute('data-emp')); }
     });
     root.addEventListener('change', (e) => {
       if (e.target && e.target.hasAttribute('data-photo')) {
@@ -235,6 +274,8 @@ class CleanlinessAudit extends HTMLElement {
     if (p.error) { this._$('loadingState').innerHTML = `<span style="color:#b91c1c">${p.error}</span>`; return; }
     this._user = p.currentUser || null;
     this._existing = p.existingReport || null;
+    this._meScope = p.meScope || '';
+    this._team = p.team || [];
     this._active.vehicle = !!(this._user && this._user.vehicleNumber && String(this._user.vehicleNumber).trim());
     this._active.office = !!(this._user && this._user.hasOffice);
     this._vehicleNoun = (this._user && this._user.vehicleNoun) ? String(this._user.vehicleNoun).toLowerCase() : 'vehicle';
@@ -244,9 +285,64 @@ class CleanlinessAudit extends HTMLElement {
   _renderPage() {
     this._$('loadingState').style.display = 'none';
     this._$('viewMine').style.display = '';
+    this._renderTeamPto();
     if (this._existing) this._showSubmitted(this._existing);
     else if (isAuditLocked(new Date())) this._showLocked();
     else this._showForm();
+  }
+
+  // Manager-only: this week's audit-owing roster in the manager's department scope, with a
+  // Mark/Remove PTO control per person. Never shown to a non-manager (meScope blank).
+  _renderTeamPto() {
+    const el = this._$('teamPtoSection');
+    if (!this._meScope) { el.innerHTML = ''; return; }
+
+    const rows = this._team.map(t => {
+      const badge = t.status === 'submitted'
+        ? '<span class="team-badge submitted">Submitted</span>'
+        : t.status === 'pto'
+          ? '<span class="team-badge pto">PTO</span>'
+          : '<span class="team-badge pending">Pending</span>';
+      const action = t.status === 'pending'
+        ? `<button class="team-btn mark" data-action="mark-pto" data-emp="${t._id}" ${this._ptoBusy ? 'disabled' : ''}>Mark PTO</button>`
+        : t.status === 'pto'
+          ? `<button class="team-btn remove" data-action="unmark-pto" data-emp="${t._id}" ${this._ptoBusy ? 'disabled' : ''}>Remove</button>`
+          : '';
+      return `<div class="team-row">
+        <span class="team-name">${esc(t.name)}</span>
+        <span class="team-branch">${esc(t.branch || 'Unassigned')}</span>
+        ${t.status === 'pto' && t.markedByName ? `<span class="team-by">by ${esc(t.markedByName)}</span>` : ''}
+        ${badge}
+        ${action}
+      </div>`;
+    }).join('');
+
+    el.innerHTML = `<div class="team-card">
+      <div class="team-head"><div class="team-title">🌴 Your team — this week's cleanliness audit</div></div>
+      ${this._ptoErr ? `<div class="team-err">${esc(this._ptoErr)}</div>` : ''}
+      ${rows || '<div style="color:var(--gray-400);font-size:13px;font-style:italic">No one in your department(s) owes an audit this week.</div>'}
+    </div>`;
+  }
+
+  _sendPto(kind, employeeId) {
+    if (!employeeId) return;
+    this._ptoBusy = true;
+    this._ptoErr = '';
+    this.dispatchEvent(new CustomEvent(kind, {
+      detail: { employeeId, weekStart: getAuditWeekStart(new Date()) }, bubbles: true, composed: true,
+    }));
+    this._renderTeamPto();
+  }
+
+  // A success here is deliberately silent: the mark/unmark webMethod wrote/removed a
+  // CleanlinessAudit row, and the Velo handler immediately re-runs init-data with the updated
+  // team roster, which lands as a normal attributeChangedCallback and does the actual re-render.
+  _applyPtoResult(json) {
+    let d;
+    try { d = JSON.parse(json); } catch (e) { return; }
+    this._ptoBusy = false;
+    if (!d.ok) { this._ptoErr = d.error || 'That failed.'; this._renderTeamPto(); return; }
+    this._ptoErr = '';
   }
 
   _showLocked() {
