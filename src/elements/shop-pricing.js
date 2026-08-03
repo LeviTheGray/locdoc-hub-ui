@@ -31,6 +31,7 @@
  *                      here directly: the catalog price is already established.
  *   Ordered          → sent to the vendor. THIS IS THE AUTOMATION TRIGGER.
  *   Partially Received / Received → fulfilment.
+ *   Waiting for Pickup → item is in-house but the member hasn't picked it up yet.
  *   Cancelled        → admin killed it; points are refunded in full.
  *   Archived         → off the board (terminal, pre-existing).
  */
@@ -43,6 +44,7 @@ export const STATUS = {
   WAITING_BULK: 'Waiting - Bulk Order',
   PARTIALLY_RECEIVED: 'Partially Received',
   RECEIVED: 'Received',
+  WAITING_PICKUP: 'Waiting for Pickup',
   CANCELLED: 'Cancelled',
   ARCHIVED: 'Archived',
 };
@@ -62,6 +64,7 @@ const MEMBER_VISIBLE = [
   STATUS.WAITING_BULK,
   STATUS.PARTIALLY_RECEIVED,
   STATUS.RECEIVED,
+  STATUS.WAITING_PICKUP,
   'completed', // legacy synonym for Received — see displayStatus
 ].map((s) => s.toLowerCase());
 
