@@ -254,7 +254,7 @@ const STYLES = `
   .drv-avg .v { font-size:calc(20px * var(--fs)); font-weight:900; }
   .drv-tiles-card { background:#fff; border:1.5px solid var(--gray-200); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; }
   .drv-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
-  .drv-tile { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; aspect-ratio:1; border:1.5px solid var(--gray-200); border-radius:12px; padding:16px 10px; }
+  .drv-tile { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:6px; border:1.5px solid var(--gray-200); border-radius:12px; padding:10px 10px 8px; }
   .drv-tile-rank { position:absolute; top:8px; left:10px; font-weight:800; font-size:calc(11px * var(--fs)); color:var(--gray-400); }
   .drv-tile-veh-icon { position:absolute; top:6px; right:8px; font-size:calc(13px * var(--fs)); opacity:.55; cursor:default; }
   /* Wraps onto a second line (e.g. last name) instead of truncating — a name is more useful
@@ -268,9 +268,18 @@ const STYLES = `
   .drv-legend { display:flex; align-items:center; gap:0; margin-top:14px; font-size:11px; color:var(--gray-500); }
   .drv-legend i { width:38px; height:12px; display:inline-block; }
 
-  /* Core Values tab — reuses the mosaic tile styling from core-values-data.js, 2-up. */
+  /* Core Values tab — reuses the mosaic tile styling from core-values-data.js, 2-up.
+     The shared tiles are sized for an 8-up wall page; bump text up for meeting-room readability,
+     here and (harder) on the "See all 8" grid where there's less room per tile. */
   ${CORE_VALUES_CSS}
+  .value-glyph.material-symbols-outlined { font-size:calc(46px * var(--fs)); }
+  .vt-trait { font-size:calc(14px * var(--fs)); }
+  .vt-name { font-size:calc(22px * var(--fs)); }
+  .value-desc { font-size:calc(16px * var(--fs)); max-width:32ch; }
   .cv-grid.values-grid { grid-template-columns:repeat(2, minmax(0,1fr)) !important; }
+  .cv-grid .vt-trait { font-size:calc(15px * var(--fs)); }
+  .cv-grid .vt-name { font-size:calc(24px * var(--fs)); }
+  .cv-grid .value-desc { font-size:calc(17px * var(--fs)); max-width:38ch; }
   .cv-question { margin-top:12px; padding-top:14px; border-top:1px dashed var(--gray-200); font-size:calc(13px * var(--fs)); font-weight:700; color:var(--primary); }
   @media (max-width:640px) { .cv-grid.values-grid { grid-template-columns:1fr !important; } }
 
