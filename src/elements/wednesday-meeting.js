@@ -113,7 +113,7 @@ const SAMPLE_DATA = {
   ],
   // Agenda tab embeds the next meeting's presentation, fed from WeeklyAgendas via page Velo.
   // Empty by default so demo/unwired state never shows a fake topic. { title, url, date }
-  agendaSlide: { title: '', url: '', date: '' },
+  agendaSlide: { title: '', url: '', type: '', date: '' },
 };
 
 // ---- helpers ----
@@ -124,6 +124,9 @@ function slidesEmbed(url) {
   const m = String(url).match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);
   return m ? `https://docs.google.com/presentation/d/${m[1]}/embed?start=false&loop=false&delayms=5000` : String(url);
 }
+// Rows saved before `type` existed have no explicit 'slides' | 'external' marker — fall back to
+// sniffing a Google Slides URL so old links keep embedding the way they always did.
+function isGoogleSlidesUrl(url) { return /\/presentation\/d\//.test(String(url || '')); }
 // Cleanliness audit week: Wed 9am → next Tue 11:59pm; Wed 00:00–09:00 is the locked meeting window.
 // Returns the YYYY-MM-DD of the Wednesday the active week opened (local time). Scorecard stays Monday-based.
 function localISODate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
@@ -402,9 +405,11 @@ class WednesdayMeeting extends HTMLElement {
     this._lightbox = null;  // { items: [{ url, caption }], i } | null
     this._shell = false;
     this._cvShowAll = false; // Core Values tab: false = this week's 2 picks, true = all 8
-    this._isOperations = false; // from init-data — unlocks the Agenda-tab slides editor
+    this._isManager = false;    // from init-data — unlocks the Agenda-tab presentation editor
     this._agendaBusy = false;   // saving the agenda link
     this._agendaMsg = null;     // { ok, text } feedback after a save
+    this._agendaType = '';      // editor's pending type selection ('slides' | 'external'), unset = follow current link
+    this._agendaTypedUrl = null; // preserves the typed URL across a type-radio switch (which re-renders)
     this._onKey = this._onKey.bind(this);
   }
 
@@ -425,7 +430,7 @@ class WednesdayMeeting extends HTMLElement {
   _applyData(json) {
     try {
       const p = JSON.parse(json);
-      if (p && typeof p === 'object') { this._data = { ...SAMPLE_DATA, ...p }; this._isOperations = Boolean(p.isOperations); }
+      if (p && typeof p === 'object') { this._data = { ...SAMPLE_DATA, ...p }; this._isManager = Boolean(p.isManager); }
     } catch (e) { /* keep sample data */ }
     this._clWeek = null;
     this._render();
@@ -438,8 +443,10 @@ class WednesdayMeeting extends HTMLElement {
     try { r = JSON.parse(json) || {}; } catch (e) { return; }
     this._agendaBusy = false;
     if (r.ok) {
-      this._data.agendaSlide = { ...(this._data.agendaSlide || {}), url: r.url || '' };
-      this._agendaMsg = { ok: true, text: r.url ? 'Slides link saved.' : 'Slides link removed.' };
+      this._data.agendaSlide = { ...(this._data.agendaSlide || {}), url: r.url || '', type: r.type || '' };
+      this._agendaType = '';
+      this._agendaTypedUrl = null;
+      this._agendaMsg = { ok: true, text: r.url ? 'Presentation link saved.' : 'Presentation link removed.' };
     } else {
       this._agendaMsg = { ok: false, text: r.error || 'Could not save the slides link.' };
     }
@@ -509,6 +516,11 @@ class WednesdayMeeting extends HTMLElement {
     });
     root.addEventListener('change', (e) => {
       if (e.target && e.target.hasAttribute('data-cl-week')) { this._clWeek = e.target.value; this._render(); }
+      if (e.target && e.target.hasAttribute('data-agenda-type')) {
+        const urlInput = this.shadowRoot.querySelector('[data-agenda-url]');
+        this._agendaTypedUrl = urlInput ? urlInput.value : '';
+        this._agendaType = e.target.value; this._render();
+      }
     });
     document.addEventListener('fullscreenchange', () => {
       const btn = this.shadowRoot.querySelector('[data-present-toggle]');
@@ -523,16 +535,18 @@ class WednesdayMeeting extends HTMLElement {
     this._render();
   }
 
-  // Operations-only: hand the typed Google Slides link to the page, which writes it to this
-  // meeting's WeeklyAgendas row (server re-checks Operations). agendaSlide.id targets the row.
+  // Manager-only: hand the typed presentation link (and its type) to the page, which writes it to
+  // this meeting's WeeklyAgendas row (server re-checks manager status). agendaSlide.id targets the row.
   _saveAgenda() {
     const a = this._data.agendaSlide || {};
     if (!a.id) { this._agendaMsg = { ok: false, text: "Add this meeting's topic in Weekly Agendas first." }; this._render(); return; }
     const input = this.shadowRoot.querySelector('[data-agenda-url]');
     const url = input ? input.value.trim() : '';
     if (url && !/^https?:\/\//i.test(url)) { this._agendaMsg = { ok: false, text: 'Enter a valid https:// link.' }; this._render(); return; }
+    const typeInput = this.shadowRoot.querySelector('[data-agenda-type]:checked');
+    const type = typeInput ? typeInput.value : (a.type || 'slides');
     this._agendaBusy = true; this._agendaMsg = null; this._render();
-    this.dispatchEvent(new CustomEvent('save-agenda-slides', { detail: { agendaId: a.id, url }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('save-agenda-slides', { detail: { agendaId: a.id, url, type }, bubbles: true, composed: true }));
   }
 
   _render() {
@@ -817,35 +831,52 @@ class WednesdayMeeting extends HTMLElement {
   _agendaPanel() {
     const a = this._data.agendaSlide || {};
     const hasTopic = !!(a.title && String(a.title).trim());
-    const src = slidesEmbed(a.url);
+    // Explicit type wins; rows saved before `type` existed fall back to sniffing a Slides URL.
+    const isExternal = a.url && (a.type ? a.type === 'external' : !isGoogleSlidesUrl(a.url));
+    const src = isExternal ? '' : slidesEmbed(a.url);
     const sub = hasTopic
       ? `${esc(a.title)}${a.date ? ` · ${esc(fmtDate(a.date))}` : ''}`
-      : 'Set the next meeting’s topic and Google Slides link in the Weekly Agendas table.';
-    return `
-      <div class="panel-sub" style="margin-top:0">${sub}</div>
-      ${src
-        ? `<div class="slide-embed"><iframe src="${esc(src)}" allowfullscreen></iframe></div>`
+      : 'Set the next meeting’s topic and presentation link in the Weekly Agendas table.';
+    const body = src
+      ? `<div class="slide-embed"><iframe src="${esc(src)}" allowfullscreen></iframe></div>`
+      : isExternal
+        ? `<div class="card" style="text-align:center;padding:32px 24px">
+            <a class="deck-btn" href="${esc(a.url)}" target="_blank" rel="noopener">Open presentation ↗</a>
+            <div class="muted" style="margin-top:10px">Opens in a new tab.</div></div>`
         : `<div class="card"><div class="placeholder">${hasTopic
             ? 'No presentation linked for this meeting yet.'
-            : 'No upcoming meeting found in Weekly Agendas.'} Add a Google Slides link to the meeting's row to show it here.${a.url ? ` <a class="slide-link" href="${esc(a.url)}" target="_blank" rel="noopener">Open link</a>` : ''}</div></div>`}
-      ${this._isOperations ? this._agendaEditor(a) : ''}`;
+            : 'No upcoming meeting found in Weekly Agendas.'} Add a presentation link to the meeting's row to show it here.</div></div>`;
+    return `
+      <div class="panel-sub" style="margin-top:0">${sub}</div>
+      ${body}
+      ${this._isManager ? this._agendaEditor(a) : ''}`;
   }
 
-  // Operations-only inline editor for the meeting's Google Slides link. Hidden while presenting —
+  // Manager-only inline editor for the meeting's presentation link. Hidden while presenting —
   // nobody edits the link on the projector, and it keeps the deck clean on the TV.
   _agendaEditor(a) {
     if (this.hasAttribute('data-present')) return '';
     const msg = this._agendaMsg;
+    // Explicit pending selection wins (mid-edit); else follow the saved link's type; default 'slides'.
+    const type = this._agendaType || a.type || 'slides';
     return `
       <div class="card" style="margin-top:16px;padding:16px 18px">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Operations · Google Slides link</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Presentation link</div>
+        <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="agenda-type" data-agenda-type value="slides" ${type === 'slides' ? 'checked' : ''}> Google Slides (embedded)
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="agenda-type" data-agenda-type value="external" ${type === 'external' ? 'checked' : ''}> External link (opens in new tab)
+          </label>
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <input type="text" data-agenda-url placeholder="https://docs.google.com/presentation/d/…"
-            value="${esc(a.url || '')}"
+          <input type="text" data-agenda-url placeholder="${type === 'external' ? 'https://…' : 'https://docs.google.com/presentation/d/…'}"
+            value="${esc(this._agendaTypedUrl != null ? this._agendaTypedUrl : (a.url || ''))}"
             style="flex:1;min-width:220px;padding:9px 11px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:14px">
           <button class="deck-btn" data-save-agenda ${this._agendaBusy ? 'disabled' : ''}>${this._agendaBusy ? 'Saving…' : 'Save'}</button>
         </div>
-        ${a.id ? '' : `<div class="muted" style="margin-top:8px">Add this meeting's topic in Weekly Agendas before linking slides.</div>`}
+        ${a.id ? '' : `<div class="muted" style="margin-top:8px">Add this meeting's topic in Weekly Agendas before linking a presentation.</div>`}
         ${msg ? `<div style="margin-top:8px;font-size:13px;font-weight:600;color:${msg.ok ? 'var(--green)' : 'var(--red)'}">${esc(msg.text)}</div>` : ''}
       </div>`;
   }
