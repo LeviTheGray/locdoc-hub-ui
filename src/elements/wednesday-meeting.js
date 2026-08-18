@@ -839,7 +839,7 @@ class WednesdayMeeting extends HTMLElement {
     const PARKED_LABELS = { no_employee_match: 'Not in roster', inactive: 'Inactive / departed', pto: 'On PTO' };
     const parkedHtml = parked.length ? `
       <div class="drv-tiles-card" style="margin-top:14px">
-        <div class="drv-parked-title">🅿️ Parked (${parked.length}) — van reported, excluded from ranking &amp; averages</div>
+        <div class="drv-parked-title">🅿️ Parked (${parked.length}) — van reported, excluded from ranking</div>
         <div class="drv-parked-list">${parked.map(r => `
           <div class="drv-parked-row">
             ${r.vehicle ? `<span class="drv-tile-veh-icon" title="Vehicle #${esc(r.vehicle)}">🚐</span>` : ''}
