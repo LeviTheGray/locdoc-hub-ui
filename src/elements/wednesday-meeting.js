@@ -28,15 +28,33 @@
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 import { CORE_VALUES, CORE_VALUES_CSS, valueCardHTML } from './core-values-data.js';
 
+// Top-level tabs. 'reports' and 'culture' are GROUPS (below) — each renders a sub-nav of its
+// own instead of taking a top-level slot, so the bar stays short as more reports/culture
+// moments get added (e.g. Credit Card is coming as a "reports" sub-tab once it's proven out
+// standalone) without ever needing horizontal scroll or shrinking tabs to fit.
 const TABS = [
-  { key: 'upcoming',    label: 'Upcoming Meeting',   icon: '📅' },
-  { key: 'cleanliness', label: 'Cleanliness',        icon: '🧹' },
-  { key: 'drivers',     label: 'Driver Scorecard',   icon: '🚐' },
-  { key: 'corevalues',  label: 'Core Values',        icon: '💎' },
-  { key: 'positive',    label: 'One Positive Thing', icon: '🌟' },
-  { key: 'spotlight',   label: 'Tech Spotlight',     icon: '🔧' },
-  { key: 'agenda',      label: 'Agenda',             icon: '📋' },
+  { key: 'upcoming',   label: 'Upcoming Meeting', icon: '📅' },
+  { key: 'reports',    label: 'Reports',          icon: '📊' },
+  { key: 'culture',    label: 'Team Culture',     icon: '🎉' },
+  { key: 'spotlight',  label: 'Tech Spotlight',   icon: '🔧' },
+  { key: 'agenda',     label: 'Agenda',           icon: '📋' },
 ];
+
+const GROUPS = {
+  reports: [
+    { key: 'cleanliness', label: 'Cleanliness',      icon: '🧹' },
+    { key: 'drivers',     label: 'Driver Scorecard', icon: '🚐' },
+  ],
+  culture: [
+    { key: 'corevalues', label: 'Core Values',        icon: '💎' },
+    { key: 'positive',   label: 'One Positive Thing', icon: '🌟' },
+  ],
+};
+
+// Flattened step order for ←/→ presenter navigation — visits every sub-tab in sequence
+// instead of skipping straight past a grouped tab, so stepping through the meeting still
+// covers everything the old flat tab list did.
+const NAV_STEPS = TABS.flatMap(t => GROUPS[t.key] ? GROUPS[t.key].map(s => ({ tab: t.key, sub: s.key })) : [{ tab: t.key }]);
 
 // A few varied prompts so the tab doesn't feel identical every week — picked deterministically
 // by the meeting week (same pattern as pickWeeklyCoreValues), so everyone in the room sees the
@@ -188,6 +206,12 @@ const STYLES = `
   .tab:hover { color:var(--gray-900); }
   .tab.active { color:var(--primary); border-bottom-color:var(--primary); }
   .tab .tab-icon { font-size:16px; }
+  .subtabbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:22px; }
+  .subtab { display:flex; align-items:center; gap:6px; padding:8px 14px; font-size:calc(13px * var(--fs)); font-weight:600;
+    color:var(--gray-500); border:1.5px solid var(--gray-200); background:#fff; border-radius:100px; cursor:pointer; }
+  .subtab:hover { color:var(--gray-900); border-color:var(--gray-300); }
+  .subtab.active { color:#fff; background:var(--primary); border-color:var(--primary); }
+  .subtab .subtab-icon { font-size:14px; }
   .main { max-width:1040px; margin:0 auto; padding:32px 20px 64px; }
   .panel { animation:fade .2s ease; }
   @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
@@ -378,6 +402,8 @@ const STYLES = `
      unreadable from the back of the room. Scale the labels that actually appear while presenting. */
   :host([data-present]) .tab { font-size:22px; padding:14px 22px; }
   :host([data-present]) .tab .tab-icon { font-size:26px; }
+  :host([data-present]) .subtab { font-size:18px; padding:12px 20px; }
+  :host([data-present]) .subtab .subtab-icon { font-size:20px; }
   :host([data-present]) .header .week { font-size:20px; }
   :host([data-present]) .sp-tech { font-size:23px; }
   :host([data-present]) .sp-ps h4 { font-size:19px; }
@@ -421,6 +447,7 @@ class WednesdayMeeting extends HTMLElement {
     this.attachShadow({ mode: 'open' });
     this._data = SAMPLE_DATA;
     this._tab = 'upcoming';
+    this._subTab = {};      // { groupKey: activeSubKey } — e.g. { reports: 'drivers' }
     this._slide = 0;        // spotlight entry index
     this._clWeek = null;    // selected cleanliness week
     this._lightbox = null;  // { items: [{ url, caption }], i } | null
@@ -490,9 +517,18 @@ class WednesdayMeeting extends HTMLElement {
       const next = this._slide + dir;
       if (next >= 0 && next < n) { this._slide = next; this._render(); return; }
     }
-    const i = TABS.findIndex(t => t.key === this._tab);
+    // Steps through NAV_STEPS (flattened: every ungrouped tab, plus every sub-tab of a
+    // grouped one) rather than TABS directly, so ←/→ still visits Cleanliness/Drivers and
+    // Core Values/One Positive Thing individually instead of jumping straight past them.
+    const curSub = GROUPS[this._tab] ? (this._subTab[this._tab] || GROUPS[this._tab][0].key) : undefined;
+    const i = NAV_STEPS.findIndex(s => s.tab === this._tab && s.sub === curSub);
     const ni = i + dir;
-    if (ni >= 0 && ni < TABS.length) { this._tab = TABS[ni].key; this._slide = 0; this._cvShowAll = false; this._render(); }
+    if (ni >= 0 && ni < NAV_STEPS.length) {
+      const step = NAV_STEPS[ni];
+      this._tab = step.tab;
+      if (step.sub) this._subTab[step.tab] = step.sub;
+      this._slide = 0; this._cvShowAll = false; this._render();
+    }
   }
 
   _renderShell() {
@@ -514,6 +550,11 @@ class WednesdayMeeting extends HTMLElement {
     root.addEventListener('click', (e) => {
       const tab = e.target.closest('[data-tab]');
       if (tab) { this._tab = tab.getAttribute('data-tab'); this._slide = 0; this._cvShowAll = false; this._render(); return; }
+      const subtab = e.target.closest('[data-subtab]');
+      if (subtab) {
+        const [g, s] = subtab.getAttribute('data-subtab').split(':');
+        this._subTab[g] = s; this._slide = 0; this._cvShowAll = false; this._render(); return;
+      }
       const entry = e.target.closest('[data-entry-nav]');
       if (entry) { this._slide += Number(entry.getAttribute('data-entry-nav')); this._render(); return; }
       const lbNav = e.target.closest('[data-lb-nav]');
@@ -602,14 +643,28 @@ class WednesdayMeeting extends HTMLElement {
   }
 
   _panel(key) {
-    if (key === 'upcoming')    return this._upcomingPanel();
-    if (key === 'cleanliness') return this._cleanlinessPanel();
-    if (key === 'drivers')     return this._driversPanel();
-    if (key === 'corevalues')  return this._coreValuesPanel();
-    if (key === 'positive')    return this._positivePanel();
-    if (key === 'spotlight')   return this._spotlightPanel();
-    if (key === 'agenda')      return this._agendaPanel();
+    if (key === 'upcoming')  return this._upcomingPanel();
+    if (GROUPS[key])         return this._groupPanel(key);
+    if (key === 'spotlight') return this._spotlightPanel();
+    if (key === 'agenda')    return this._agendaPanel();
     return '';
+  }
+
+  // A grouped tab (Reports, Team Culture) renders its own sub-nav, then the active sub-tab's
+  // existing panel — the sub-panels themselves (_cleanlinessPanel, _driversPanel, etc.) are
+  // unchanged, this just wraps them.
+  _groupPanel(groupKey) {
+    const subs = GROUPS[groupKey];
+    const active = this._subTab[groupKey] || subs[0].key;
+    const nav = subs.map(s => `<button class="subtab ${s.key === active ? 'active' : ''}" data-subtab="${groupKey}:${s.key}"><span class="subtab-icon">${s.icon}</span>${s.label}</button>`).join('');
+    const SUB_PANELS = {
+      cleanliness: () => this._cleanlinessPanel(),
+      drivers: () => this._driversPanel(),
+      corevalues: () => this._coreValuesPanel(),
+      positive: () => this._positivePanel(),
+    };
+    const content = (SUB_PANELS[active] || (() => ''))();
+    return `<div class="subtabbar">${nav}</div><div class="subtab-panel">${content}</div>`;
   }
 
   // ---- Tab 1: Upcoming ----
