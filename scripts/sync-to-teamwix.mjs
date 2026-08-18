@@ -45,7 +45,7 @@ const ELEMENTS = [
   'tokens.js', 'hub-home.js', 'home-landing.js', 'my-reports.js',
   'weekly-report.js', 'cleanliness-audit.js', 'common-area-audit.js', 'team-member-assessment.js',
   'tech-spotlight-submit.js', 'one-on-one.js', 'team-reports.js',
-  'cleanliness-report.js', 'wednesday-meeting.js', 'mission-vision.js',
+  'cleanliness-report.js', 'credit-card-report.js', 'wednesday-meeting.js', 'mission-vision.js',
   'core-values-data.js', 'core-values.js', 'resources-hub.js',
   'meetings.js', 'annual-events.js', 'company-holidays.js', 'benefits.js',
   'shop.js', 'employee-lifecycle.js',
