@@ -29,12 +29,23 @@ import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 import { CORE_VALUES, CORE_VALUES_CSS, valueCardHTML } from './core-values-data.js';
 
 const TABS = [
-  { key: 'upcoming',    label: 'Upcoming Meeting', icon: '📅' },
-  { key: 'cleanliness', label: 'Cleanliness',      icon: '🧹' },
-  { key: 'drivers',     label: 'Driver Scorecard', icon: '🚐' },
-  { key: 'corevalues',  label: 'Core Values',      icon: '💎' },
-  { key: 'spotlight',   label: 'Tech Spotlight',   icon: '🔧' },
-  { key: 'agenda',      label: 'Agenda',           icon: '📋' },
+  { key: 'upcoming',    label: 'Upcoming Meeting',   icon: '📅' },
+  { key: 'cleanliness', label: 'Cleanliness',        icon: '🧹' },
+  { key: 'drivers',     label: 'Driver Scorecard',   icon: '🚐' },
+  { key: 'corevalues',  label: 'Core Values',        icon: '💎' },
+  { key: 'positive',    label: 'One Positive Thing', icon: '🌟' },
+  { key: 'spotlight',   label: 'Tech Spotlight',     icon: '🔧' },
+  { key: 'agenda',      label: 'Agenda',             icon: '📋' },
+];
+
+// A few varied prompts so the tab doesn't feel identical every week — picked deterministically
+// by the meeting week (same pattern as pickWeeklyCoreValues), so everyone in the room sees the
+// same one and it's stable if the page reloads mid-meeting.
+const POSITIVE_PROMPTS = [
+  'Share one good thing that happened this week — a win, big or small, personal or work.',
+  'What is one thing that went right this week? Doesn’t have to be huge — just something worth saying out loud.',
+  'Brag on yourself for a second — what is one positive thing from your week?',
+  'What is one moment from this week you would want the team to know about?',
 ];
 
 const RULES = [
@@ -189,6 +200,10 @@ const STYLES = `
   .list-row .meta { color:var(--gray-500); font-size:13px; }
   .spotlight-banner { background:#fef3c7; border:1.5px solid #fde68a; border-radius:var(--radius); padding:16px 20px; margin-bottom:20px; font-size:calc(16px * var(--fs)); }
   .spotlight-banner b { color:var(--amber); }
+  .positive-card { background:linear-gradient(180deg,#fffbea,#fff); border:1.5px solid #fde68a; border-radius:var(--radius); box-shadow:var(--shadow); padding:48px 32px; text-align:center; max-width:640px; margin:0 auto; }
+  .positive-emoji { font-size:calc(44px * var(--fs)); display:block; margin-bottom:14px; }
+  .positive-title { font-size:calc(22px * var(--fs)); font-weight:900; margin-bottom:14px; }
+  .positive-prompt { font-size:calc(16px * var(--fs)); color:var(--gray-600); line-height:1.5; }
   table { width:100%; border-collapse:collapse; font-size:calc(14px * var(--fs)); }
   th { text-align:left; padding:12px 16px; background:var(--gray-50); color:var(--gray-500); font-size:12px; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--gray-200); }
   td { padding:14px 16px; border-bottom:1px solid var(--gray-100); }
@@ -270,6 +285,12 @@ const STYLES = `
   .drv-tile.medal-3 { background:linear-gradient(180deg,#fbe8da,#fff); border-color:#b3703f; box-shadow:0 0 0 1px #b3703f inset; }
   .drv-legend { display:flex; align-items:center; gap:0; margin-top:14px; font-size:11px; color:var(--gray-500); }
   .drv-legend i { width:38px; height:12px; display:inline-block; }
+  .drv-parked-title { font-size:12px; font-weight:700; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; margin-bottom:10px; }
+  .drv-parked-list { display:flex; flex-direction:column; gap:4px; }
+  .drv-parked-row { display:flex; align-items:center; gap:10px; padding:7px 4px; border-bottom:1px solid var(--gray-100); font-size:calc(13px * var(--fs)); opacity:.75; }
+  .drv-parked-row:last-child { border-bottom:none; }
+  .drv-parked-row .drv-tile-veh-icon { position:static; opacity:.55; }
+  .drv-parked-reason { margin-left:auto; font-size:11px; font-weight:700; color:var(--gray-500); background:var(--gray-100); border-radius:100px; padding:3px 10px; }
 
   /* Core Values tab — reuses the mosaic tile styling from core-values-data.js, 2-up.
      The shared tiles are sized for an 8-up wall page; bump text up for meeting-room readability,
@@ -585,6 +606,7 @@ class WednesdayMeeting extends HTMLElement {
     if (key === 'cleanliness') return this._cleanlinessPanel();
     if (key === 'drivers')     return this._driversPanel();
     if (key === 'corevalues')  return this._coreValuesPanel();
+    if (key === 'positive')    return this._positivePanel();
     if (key === 'spotlight')   return this._spotlightPanel();
     if (key === 'agenda')      return this._agendaPanel();
     return '';
@@ -739,9 +761,14 @@ class WednesdayMeeting extends HTMLElement {
   // ---- Tab 3: Driver Scorecard (ranked tiles) ----
   _driversPanel() {
     const d = this._data;
-    const rows = (d.drivers || []).slice().sort((a, b) => b.score - a.score);
+    const all = (d.drivers || []);
+    // Parked = a van reported (score comes from the fleet telematics vendor, we can't affect
+    // it) but the person behind it shouldn't be ranked: they're not in the roster, they're
+    // inactive/departed, or they're on PTO. Flagged upstream (n8n) via `parked`/`parkedReason`.
+    const rows = all.filter(r => !r.parked).slice().sort((a, b) => b.score - a.score);
+    const parked = all.filter(r => r.parked);
     const m = d.driversMeta || {};
-    if (!rows.length) return `<div class="placeholder">Weekly Driver Safety Scorecard loads here from the DriverScores collection.</div>`;
+    if (!all.length) return `<div class="placeholder">Weekly Driver Safety Scorecard loads here from the DriverScores collection.</div>`;
     const ra = m.ruleAverages || {};
     const medalCls = ['medal-1', 'medal-2', 'medal-3'];
     const tiles = rows.map((r, i) => {
@@ -754,6 +781,17 @@ class WednesdayMeeting extends HTMLElement {
       </div>`;
     }).join('');
     const avgs = RULES.map(rule => { const v = ra[rule.key]; return `<div class="drv-avg" style="background:${drvColor(v)}33;border:1.5px solid ${drvColor(v)}"><div class="l">${rule.label}</div><div class="v">${v == null ? '—' : Number(v).toFixed(2)}</div></div>`; }).join('');
+    const PARKED_LABELS = { no_employee_match: 'Not in roster', inactive: 'Inactive / departed', pto: 'On PTO' };
+    const parkedHtml = parked.length ? `
+      <div class="drv-tiles-card" style="margin-top:14px">
+        <div class="drv-parked-title">🅿️ Parked (${parked.length}) — van reported, excluded from ranking &amp; averages</div>
+        <div class="drv-parked-list">${parked.map(r => `
+          <div class="drv-parked-row">
+            ${r.vehicle ? `<span class="drv-tile-veh-icon" title="Vehicle #${esc(r.vehicle)}">🚐</span>` : ''}
+            <span class="drv-tile-name">${esc(r.name || '(no name on file)')}</span>
+            <span class="drv-parked-reason">${esc(PARKED_LABELS[r.parkedReason] || 'Parked')}</span>
+          </div>`).join('')}</div>
+      </div>` : '';
     return `
       <div class="panel-sub">${m.dateRange ? 'Week of ' + esc(m.dateRange) : 'Weekly driver safety scores.'}</div>
       <div class="drv-top">
@@ -763,7 +801,8 @@ class WednesdayMeeting extends HTMLElement {
       <div class="drv-tiles-card">
         <div class="drv-tiles">${tiles}</div>
         <div class="drv-legend"><span>0</span><i style="background:#ef4444"></i><i style="background:#fb923c"></i><i style="background:#facc15"></i><i style="background:#4ade80"></i><i style="background:#16a34a"></i><span>100</span></div>
-      </div>`;
+      </div>
+      ${parkedHtml}`;
   }
 
   // ---- Tab 4: Core Values (2 random-per-week, with a discussion prompt; "See all" for
@@ -792,6 +831,19 @@ class WednesdayMeeting extends HTMLElement {
         <button class="deck-btn" data-cv-toggle>See all 8 →</button>
       </div>
       <div class="values-grid cv-grid">${cards}</div>`;
+  }
+
+  // ---- Tab: One Positive Thing (discussion prompt, no submission/persistence — a moment for
+  // the team to share a win from the week, same spirit as "Brag on Your Team" elsewhere) ----
+  _positivePanel() {
+    const seed = this._data.weekOf || todayISO();
+    const prompt = POSITIVE_PROMPTS[hashStr(String(seed)) % POSITIVE_PROMPTS.length];
+    return `
+      <div class="positive-card">
+        <span class="positive-emoji">🌟</span>
+        <div class="positive-title">One Positive Thing</div>
+        <p class="positive-prompt">${esc(prompt)}</p>
+      </div>`;
   }
 
   // ---- Tab 5: Tech Spotlight ----
