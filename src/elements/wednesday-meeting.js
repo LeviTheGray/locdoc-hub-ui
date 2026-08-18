@@ -34,8 +34,8 @@ import { CORE_VALUES, CORE_VALUES_CSS, valueCardHTML } from './core-values-data.
 // standalone) without ever needing horizontal scroll or shrinking tabs to fit.
 const TABS = [
   { key: 'upcoming',   label: 'Upcoming Meeting', icon: '📅' },
-  { key: 'reports',    label: 'Reports',          icon: '📊' },
   { key: 'culture',    label: 'Team Culture',     icon: '🎉' },
+  { key: 'reports',    label: 'Reports',          icon: '📊' },
   { key: 'spotlight',  label: 'Tech Spotlight',   icon: '🔧' },
   { key: 'agenda',     label: 'Agenda',           icon: '📋' },
 ];
@@ -46,8 +46,8 @@ const GROUPS = {
     { key: 'drivers',     label: 'Driver Scorecard', icon: '🚐' },
   ],
   culture: [
-    { key: 'corevalues', label: 'Core Values',        icon: '💎' },
     { key: 'positive',   label: 'One Positive Thing', icon: '🌟' },
+    { key: 'corevalues', label: 'Core Values',        icon: '💎' },
   ],
 };
 
