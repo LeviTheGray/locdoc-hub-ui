@@ -205,6 +205,10 @@ class HubHome extends HTMLElement {
   }
 
   _render() {
+    // attributeChangedCallback can fire before connectedCallback for a freshly-upgraded element,
+    // in which case the shell hasn't been painted yet — render it now instead of crashing on a
+    // null querySelector.
+    if (!this._shell) this._renderShell();
     const root = this.shadowRoot;
     if (this._error) {
       root.querySelector('[data-loading]').textContent = this._error;
