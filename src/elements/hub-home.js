@@ -178,7 +178,19 @@ class HubHome extends HTMLElement {
       const nm = tile.querySelector('.tile-name');
       if (nm) nm.innerHTML = '<span class="btn-spinner"></span>Opening…';
     }
-    // Hand navigation to the Velo page code (it owns wix-location).
+    // Hand navigation to the Velo page code (it owns wix-location). If the page never actually
+    // navigates away (e.g. the target page/URL isn't wired up on the Velo side), don't leave the
+    // tile spinning forever — reset it and surface the failure.
+    this._navTimeout = setTimeout(() => {
+      this._navigating = false;
+      if (tile) {
+        tile.classList.remove('is-loading');
+        const nm = tile.querySelector('.tile-name');
+        const t = ALL_TOOLS.find(x => x.key === key);
+        if (nm && t) nm.textContent = t.name;
+      }
+      console.error(`[HubHome] Navigation for "${key}" did not complete within 6s — the target page may not be wired up in the Velo editor.`);
+    }, 6000);
     this.dispatchEvent(new CustomEvent('navigate', { detail: { key }, bubbles: true, composed: true }));
   }
 
