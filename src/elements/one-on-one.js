@@ -97,7 +97,7 @@ class OneOnOne extends HTMLElement {
       <main class="main">
         <div id="loadingState" class="loading-state">Loading…</div>
         <div id="content" style="display:none">
-          <div id="noAccess" class="empty-state" style="display:none">1:1 logging is available to managers. If you should have access, ask Operations to set your <em>manager</em> field.</div>
+          <div id="noAccess" class="empty-state" style="display:none"></div>
           <div id="rosterWrap" style="display:none">
             <div class="panel" style="padding:16px 22px;margin-bottom:16px;">
               <div class="sub" style="margin:0">Select a team member to log or review a 1:1 for <strong id="periodLabel"></strong>. A green dot means you've logged one this month.</div>
@@ -143,7 +143,16 @@ class OneOnOne extends HTMLElement {
     this._$('loadingState').style.display = 'none';
     this._$('content').style.display = '';
     this._$('periodLabel').textContent = p.periodLabel || this._period;
-    if (!this._roster.length) { this._$('noAccess').style.display = ''; return; }
+    if (!this._roster.length) {
+      const noAccess = this._$('noAccess');
+      if (p.reason === 'no-reports') {
+        noAccess.innerHTML = `You're set up as a manager, but no employees currently have <em>department</em> set to match your <em>manager</em> field${p.managerScope ? ` (<strong>${p.managerScope}</strong>)` : ''}. Ask Operations to check the Employees collection.`;
+      } else {
+        noAccess.innerHTML = `1:1 logging is available to managers. If you should have access, ask Operations to set your <em>manager</em> field.`;
+      }
+      noAccess.style.display = '';
+      return;
+    }
     this._$('rosterWrap').style.display = '';
     this._renderRoster();
   }

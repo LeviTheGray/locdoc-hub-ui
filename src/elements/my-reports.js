@@ -466,7 +466,21 @@ class MyReports extends HTMLElement {
     if (m.key === 'assessmentQuality') return this._assessmentDetail(m);
     if (m.key === 'cleanlinessQuality') return this._cleanlinessDetail(m);
     if (m.key === 'oneOnOne') return this._oneOnOneDetail(m);
+    if (m.key === 'commonArea') return this._commonAreaDetail(m);
     return this._genericDetail(m);
+  }
+
+  _commonAreaDetail(m) {
+    const d = m.detail || {};
+    const cleaned = d.cleaned || 0, submitted = d.submitted || 0;
+    const intro = `<div class="trc-answer" style="margin-bottom:14px"><strong>Common area recognition</strong> this month — bonus points for cleaning and submitting common-area audits.</div>`;
+    if (!cleaned && !submitted) return intro + `<div class="empty-state">No common-area activity recorded for this period.</div>`;
+    const rows = [
+      `<div class="trc-answer"><strong>Cleaned:</strong> ${cleaned}</div>`,
+      `<div class="trc-answer"><strong>Submitted:</strong> ${submitted}</div>`,
+      `<div class="trc-answer"><strong>Bonus points:</strong> ${m.points || 0}${d.capped ? ' (capped at monthly max)' : ''}</div>`,
+    ].join('');
+    return intro + `<div class="team-report-card"><div class="trc-answers">${rows}</div></div>`;
   }
 
   _assessmentDetail(m) {

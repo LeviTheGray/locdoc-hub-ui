@@ -30,6 +30,10 @@ export const LIVE_DEFS = {
   // point total/level (drives the leaderboard) but NOT part of the quality composite, since not
   // everyone works common areas — its absence must not penalize field staff.
   commonArea:         { key: 'commonArea',         label: 'Common Areas',     emoji: '🧽', category: 'Recognition',   valueType: 'bonus', whoCompletes: 'employee', weight: 1 },
+  // Manager-owned: did this employee's manager log a 1:1 with them this month (MeasurableEntries,
+  // written by the 1:1 page on save). whoCompletes: 'manager' drives the Monthly Manager Meeting
+  // checklist. Not folded into the employee's own composite — it isn't something they control.
+  oneOnOne:           { key: 'oneOnOne',           label: '1:1 Meeting',      emoji: '🗣️', category: 'Manager',       valueType: 'completion', whoCompletes: 'manager', weight: 1 },
 };
 
 // Common-area recognition points: credited per cleaning and per submission, capped monthly so a
@@ -123,7 +127,8 @@ export function computeStreak(period, weeklyRows, submittedAssessRows, cleanRows
  * overall (participation + the two quality averages). Used by both the single and batch paths.
  */
 export function buildLiveMeasurables(raw) {
-  const { wDone, expected, aCount, receivedAvg, cDone, avgScore, caCleans = 0, caSubmits = 0 } = raw;
+  const { wDone, expected, aCount, receivedAvg, cDone, avgScore, caCleans = 0, caSubmits = 0,
+          oneOnOneEntry = null } = raw;
   const wOk = wDone >= expected, aOk = aCount > 0, cOk = cDone >= expected;
   const doneCount = (wOk ? 1 : 0) + (aOk ? 1 : 0) + (cOk ? 1 : 0);
   const partFrac = doneCount / 3;
@@ -163,12 +168,23 @@ export function buildLiveMeasurables(raw) {
     detail: { cleaned: caCleans, submitted: caSubmits, capped: caRaw > COMMON_AREA_POINTS.monthlyCap },
   };
 
+  // 1:1 Meeting — manager-owned completion, driven by the MeasurableEntries row the 1:1 page
+  // writes on save (definitionKey 'oneOnOne'). Not folded into the composite (see LIVE_DEFS).
+  const oneOnOne = {
+    ...LIVE_DEFS.oneOnOne,
+    achievement: oneOnOneEntry ? 1 : 0, done: !!oneOnOneEntry, points: oneOnOneEntry ? 100 : 0,
+    detail: oneOnOneEntry
+      ? { date: oneOnOneEntry.date, enteredByName: oneOnOneEntry.enteredByName, notes: oneOnOneEntry.notes }
+      : {},
+  };
+
   // Blended overall = mean of the available normalized components (quality with no data yet
-  // is excluded so it neither helps nor hurts). Common-area bonus is intentionally excluded.
+  // is excluded so it neither helps nor hurts). Common-area bonus and the 1:1 manager measurable
+  // are intentionally excluded.
   const comps = [partFrac];
   if (aFrac != null) comps.push(aFrac);
   if (cFrac != null) comps.push(cFrac);
   const composite = Math.round(comps.reduce((s, x) => s + x, 0) / comps.length * 100);
 
-  return { metrics: [submissions, assessmentQuality, cleanlinessQuality, commonArea], composite, participation: doneCount };
+  return { metrics: [submissions, assessmentQuality, cleanlinessQuality, commonArea, oneOnOne], composite, participation: doneCount };
 }

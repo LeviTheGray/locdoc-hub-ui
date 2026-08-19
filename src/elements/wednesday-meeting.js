@@ -62,7 +62,7 @@ const NAV_STEPS = TABS.flatMap(t => GROUPS[t.key] ? GROUPS[t.key].map(s => ({ ta
 const POSITIVE_PROMPTS = [
   'Share one good thing that happened this week — a win, big or small, personal or work.',
   'What is one thing that went right this week? Doesn’t have to be huge — just something worth saying out loud.',
-  'Brag on yourself for a second — what is one positive thing from your week?',
+  'What is something positive you want to share from your week?',
   'What is one moment from this week you would want the team to know about?',
 ];
 
@@ -677,9 +677,12 @@ class WednesdayMeeting extends HTMLElement {
       const row = allRows.find(r => r.date === today) || allRows.find(r => r.date >= today) || allRows[allRows.length - 1];
       spotlight = row && row.tech;
     }
-    // Show only meetings in the next 4 weeks (today through +28 days).
-    const horizon = (() => { const d = new Date(); d.setDate(d.getDate() + 28); return d.toISOString().slice(0, 10); })();
-    const rows = allRows.filter(r => r.date && r.date >= today && r.date <= horizon);
+    // Show only the next 4 upcoming meetings (not a fixed day-count window, since
+    // that can off-by-one and pull in a 5th row when today itself is a meeting date).
+    const rows = allRows
+      .filter(r => r.date && r.date >= today)
+      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
+      .slice(0, 4);
     return `
       <div class="panel-sub" style="margin-top:0">Topics for the next 4 weeks and which tech has the spotlight.</div>
       ${spotlight ? `<div class="spotlight-banner">⭐ Today's Spotlight is: <b>${esc(spotlight)}</b></div>` : ''}

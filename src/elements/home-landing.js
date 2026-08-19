@@ -42,10 +42,10 @@ const CALENDAR_EMBED_SRC = 'https://calendar.google.com/calendar/embed?height=30
 const DESTINATIONS = [
   {
     key: 'meetings',
-    internal: true, // in-site: /meetings
+    internal: true, // in-site: /wednesday-meeting
     icon: 'calendar_month',
     name: 'Weekly Meetings',
-    desc: 'Weekly Meeting Links',
+    desc: 'Wednesday Meeting Agenda',
     btnText: 'Go to Meetings'
   },
   { 
@@ -116,9 +116,9 @@ const DESTINATIONS = [
     key: 'nexus-hub',
     href: 'https://lab-hub.locdoc.net/',
     icon: 'support_agent',
-    name: 'Nexus Hub',
+    name: 'Lab Hub',
     desc: 'Submit IT support tickets and track lab project management.',
-    btnText: 'Open Nexus Hub' 
+    btnText: 'Open Lab Hub'
   }
 ];
 
