@@ -86,6 +86,21 @@ export function cleanlinessWeeksInMonth(period) {
   }
   return [...weeks].filter(ws => ws.slice(0, 7) === period).sort();
 }
+
+// A week only counts toward "expected" once it's actually over — the in-progress current week
+// isn't a miss just because the month isn't finished yet. `weeks` is a sorted list of week-start
+// dates (from weeksInMonth or cleanlinessWeeksInMonth); `currentWeekStart` is that same kind of
+// week-start for "today" (currentMonday()/currentAuditWeekStart() below).
+export function dueWeeks(weeks, currentWeekStart) {
+  return weeks.filter(w => w < currentWeekStart);
+}
+export function currentMonday() {
+  return getMonday(new Date().toISOString().slice(0, 10));
+}
+export function currentAuditWeekStart() {
+  return getAuditWeekStart(new Date().toISOString().slice(0, 10));
+}
+
 // Recent week-start Mondays, current week first (descending). Drives the Weekly Check week picker.
 export function recentMondays(n = 8) {
   const out = [];
@@ -154,7 +169,10 @@ export function computeStreak(period, weeklyRows, submittedAssessRows, cleanRows
 export function buildLiveMeasurables(raw) {
   const { wDone, expected, aCount, receivedAvg, cDone, avgScore, caCleans = 0, caSubmits = 0,
           oneOnOneEntry = null, cleanExpected = expected } = raw;
-  const wOk = wDone >= expected, aOk = aCount > 0, cOk = cDone >= cleanExpected;
+  // expected/cleanExpected are DUE-weeks counts (see dueWeeks() in the caller) and can be 0 early
+  // in the month before anything is due yet — guard against 0 >= 0 reading as vacuously "done"
+  // with zero real submissions.
+  const wOk = expected > 0 && wDone >= expected, aOk = aCount > 0, cOk = cleanExpected > 0 && cDone >= cleanExpected;
   const doneCount = (wOk ? 1 : 0) + (aOk ? 1 : 0) + (cOk ? 1 : 0);
   const partFrac = doneCount / 3;
 
