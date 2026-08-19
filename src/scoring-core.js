@@ -65,6 +65,27 @@ export function weeksInMonth(period) {
   }
   return [...mondays].filter(ws => ws.slice(0, 7) === period).sort();
 }
+
+// Cleanliness audits use a DIFFERENT week anchor than everything else: Wed 9am → next Tue
+// (see getAuditWeekStart in Cleanliness Audit.vfvl5.js — the locked-submission-window hour check
+// there doesn't matter here, this only buckets a calendar day into its audit week for monthly
+// completion/quality matching). weeksInMonth()/getMonday() above is Monday-anchored and must NOT
+// be used for CleanlinessAudit — doing so means the query never matches a real row.
+export function getAuditWeekStart(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const daysBack = (d.getDay() + 4) % 7; // Wed(3) -> 0
+  d.setDate(d.getDate() - daysBack);
+  return d.toISOString().split('T')[0];
+}
+export function cleanlinessWeeksInMonth(period) {
+  const [y, m] = period.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const weeks = new Set();
+  for (let day = 1; day <= last; day++) {
+    weeks.add(getAuditWeekStart(`${period}-${String(day).padStart(2, '0')}`));
+  }
+  return [...weeks].filter(ws => ws.slice(0, 7) === period).sort();
+}
 // Recent week-start Mondays, current week first (descending). Drives the Weekly Check week picker.
 export function recentMondays(n = 8) {
   const out = [];
@@ -95,14 +116,18 @@ export function periodMinus(period, k) {
   return new Date(y, m - 1 - k, 1).toISOString().slice(0, 7);
 }
 
-// Done flags for one month, derived from broad (multi-month) row sets.
+// Done flags for one month, derived from broad (multi-month) row sets. Cleanliness uses its own
+// Wed-anchored week (cleanlinessWeeksInMonth) — NOT the Mon-anchored `weeks` used for Weekly
+// Report, or the cleanliness half never matches a real row.
 export function monthDoneFlags(period, weeklyRows, submittedAssessRows, cleanRows) {
   const weeks = weeksInMonth(period);
   const expected = weeks.length || 1;
+  const cleanWeeks = cleanlinessWeeksInMonth(period);
+  const cleanExpected = cleanWeeks.length || 1;
   const wSet = new Set(weeklyRows.map(r => r.weekStart));
   const cSet = new Set(cleanRows.map(r => r.weekStart));
   const wDone = weeks.filter(w => wSet.has(w)).length >= expected;
-  const cDone = weeks.filter(w => cSet.has(w)).length >= expected;
+  const cDone = cleanWeeks.filter(w => cSet.has(w)).length >= cleanExpected;
   const aDone = submittedAssessRows.some(r => monthKey(r.dateMonth) === period);
   return { wDone, cDone, aDone };
 }
