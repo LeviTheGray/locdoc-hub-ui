@@ -14,11 +14,11 @@
  *                       'mark-pto'   { detail: { employeeId, weekStart } }
  *                       'unmark-pto' { detail: { employeeId, weekStart } }
  *
- * PTO isn't a separate collection: marking someone PTO writes a CleanlinessAudit row for that
- * employee/week with isPTO:true (score fields left null, markedByName set) — the SAME row a real
- * submission would occupy, so one query already returns both. `audits` entries carry `isPTO` and
- * `markedByName`; everything downstream treats an isPTO row as "exempt, not missing" rather than
- * a real score.
+ * PTO is a separate PTO collection (EmployeeID, weekStart, weekEnd, source, markedByName); the
+ * Velo page merges PTO rows into the same `audits` list as real CleanlinessAudit submissions, each
+ * carrying `isPTO`/`markedByName`, so this element never needs to know they come from different
+ * collections. Everything downstream treats an isPTO row as "exempt, not missing" rather than a
+ * real score.
  *
  * meScope is the manager's raw Employees.manager value ("" = not a manager, "Operations" = every
  * department, otherwise a comma-separated department list) — it decides which participants the

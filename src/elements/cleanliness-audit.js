@@ -21,9 +21,9 @@
  * meScope (manager-only): the manager's raw Employees.manager value ("Operations" = every
  * department, otherwise a comma-separated department list). `team` is the roster of THIS week's
  * audit-owing employees in that scope (excluding the manager) with their current status —
- * `'pending' | 'submitted' | 'pto'` — same convention as cleanliness-report.js: PTO is a
- * CleanlinessAudit row with isPTO:true, not a separate collection. Only rendered when meScope is
- * non-blank, i.e. non-managers never see this section.
+ * `'pending' | 'submitted' | 'pto'` — same convention as cleanliness-report.js: PTO comes from the
+ * separate PTO collection, merged in Velo-side against this week's CleanlinessAudit rows. Only
+ * rendered when meScope is non-blank, i.e. non-managers never see this section.
  *
  * Editor: Add → Embed Code → Custom Element → source = this file,
  * tag name `cleanliness-audit`, element ID `cleanlinessAudit`.

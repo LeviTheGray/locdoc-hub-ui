@@ -128,8 +128,8 @@ export function computeStreak(period, weeklyRows, submittedAssessRows, cleanRows
  */
 export function buildLiveMeasurables(raw) {
   const { wDone, expected, aCount, receivedAvg, cDone, avgScore, caCleans = 0, caSubmits = 0,
-          oneOnOneEntry = null } = raw;
-  const wOk = wDone >= expected, aOk = aCount > 0, cOk = cDone >= expected;
+          oneOnOneEntry = null, cleanExpected = expected } = raw;
+  const wOk = wDone >= expected, aOk = aCount > 0, cOk = cDone >= cleanExpected;
   const doneCount = (wOk ? 1 : 0) + (aOk ? 1 : 0) + (cOk ? 1 : 0);
   const partFrac = doneCount / 3;
 
@@ -139,7 +139,8 @@ export function buildLiveMeasurables(raw) {
     detail: { items: [
       { key: 'weeklyReport',    label: 'Weekly Reports',    emoji: '📝', done: wOk, count: wDone, expected },
       { key: 'peerAssessment',  label: 'Team Assessment',   emoji: '🤝', done: aOk, count: aCount },
-      { key: 'cleanlinessAudit', label: 'Cleanliness Audit', emoji: '🧹', done: cOk, count: cDone, expected },
+      // expected here is PTO-adjusted (cleanExpected) — a PTO'd week isn't owed, so it isn't counted against completion.
+      { key: 'cleanlinessAudit', label: 'Cleanliness Audit', emoji: '🧹', done: cOk, count: cDone, expected: cleanExpected },
     ] },
   };
 
@@ -156,7 +157,7 @@ export function buildLiveMeasurables(raw) {
     ...LIVE_DEFS.cleanlinessQuality,
     value: avgScore, achievement: cFrac != null ? +cFrac.toFixed(2) : 0,
     points: cFrac != null ? Math.round(avgScore) : 0,
-    detail: { avgScore, count: cDone, expected },
+    detail: { avgScore, count: cDone, expected: cleanExpected },
   };
 
   // Common-area recognition — additive point bonus, NOT folded into the composite (see LIVE_DEFS).
