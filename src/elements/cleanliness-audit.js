@@ -18,6 +18,14 @@
  *                       'mark-pto'     { detail: { employeeId, weekStart } }
  *                       'unmark-pto'   { detail: { employeeId, weekStart } }
  *
+ * Editing an already-submitted audit (added so people whose photos silently failed to attach
+ * aren't stuck for the week): the submitted view has an Edit button that reopens the same form
+ * pre-filled with the existing answers/photos — untouched photo slots keep their prior URL,
+ * replaced slots just re-run the normal upload-photo flow. 'submit-audit' is dispatched exactly
+ * the same whether this is a first submission or an edit; the Velo side tells them apart by
+ * whether a CleanlinessAudit row already exists for that employee+weekStart and updates in place
+ * (stamping editCount/lastEditedDate) instead of inserting a duplicate.
+ *
  * meScope (manager-only): the manager's raw Employees.manager value ("Operations" = every
  * department, otherwise a comma-separated department list). `team` is the roster of THIS week's
  * audit-owing employees in that scope (excluding the manager) with their current status —
@@ -129,6 +137,10 @@ const STYLES = `
   .submitted-banner .check { width: 36px; height: 36px; border-radius: 50%; background: #059669; color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .submitted-banner .msg { font-size: 14px; font-weight: 600; color: #065f46; }
   .submitted-banner .sub { font-size: 12px; color: #047857; margin-top: 2px; }
+  .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .edit-btn { flex-shrink: 0; background: none; border: 1.5px solid var(--gray-200); color: var(--gray-600); border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .edit-btn:active { transform: scale(.97); }
+  .edit-notice { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; font-size: 13px; font-weight: 600; color: #92400e; margin-bottom: 20px; }
   .ro-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--gray-100); font-size: 14px; }
   .ro-item:last-child { border-bottom: none; }
   .ro-pass { color: #14532d; font-weight: 700; } .ro-fail { color: #991b1b; font-weight: 700; }
@@ -180,6 +192,7 @@ class CleanlinessAudit extends HTMLElement {
     this._team = [];
     this._ptoBusy = false;
     this._ptoErr = '';
+    this._editing = false;
   }
 
   connectedCallback() {
@@ -214,19 +227,26 @@ class CleanlinessAudit extends HTMLElement {
               <div><div class="msg">Audit submitted for this week</div><div class="sub" id="submittedSubtext"></div></div>
             </div>
             <div class="form-card">
-              <div class="card-title">Your Submission <span id="submittedWeekLabel"></span></div>
+              <div class="card-title card-title-row">
+                <span>Your Submission <span id="submittedWeekLabel"></span></span>
+                <button type="button" class="edit-btn" id="editBtn" data-action="edit-audit">✎ Edit</button>
+              </div>
               <div style="text-align:center;margin-bottom:6px"><div class="score-big" id="ro-score"></div><div style="font-size:12px;color:var(--gray-400)">cleanliness score</div></div>
               <div id="ro-body"></div>
             </div>
           </div>
           <div id="submitView" style="display:none">
+            <div class="edit-notice" id="editNotice" style="display:none">Editing this week's audit — anything you don't change stays as-is, including photos already on file.</div>
             <div class="val-banner" id="valBanner"></div>
             <div id="sectionsContainer"></div>
             <div class="form-card" id="noSectionsCard" style="display:none">
               <div style="text-align:center;color:var(--gray-400);font-size:14px;padding:12px 0">No cleanliness audit areas are assigned to your profile. Contact Operations if this is unexpected.</div>
             </div>
             <div class="form-card" id="submitCard" style="display:none">
-              <div class="form-actions"><button class="btn-primary" id="submitBtn" data-action="submit">Submit Cleanliness Audit</button></div>
+              <div class="form-actions">
+                <button class="btn-primary" id="submitBtn" data-action="submit">Submit Cleanliness Audit</button>
+                <button class="edit-btn" id="cancelEditBtn" data-action="cancel-edit" style="display:none">Cancel</button>
+              </div>
             </div>
           </div>
           <div id="successView" style="display:none">
@@ -252,6 +272,8 @@ class CleanlinessAudit extends HTMLElement {
         return;
       }
       if (e.target.closest('[data-action="submit"]')) { this._submit(); return; }
+      if (e.target.closest('[data-action="edit-audit"]')) { this._startEdit(); return; }
+      if (e.target.closest('[data-action="cancel-edit"]')) { this._cancelEdit(); return; }
       const pf = e.target.closest('[data-pf-section]');
       if (pf) { this._setAnswer(pf.getAttribute('data-pf-section'), pf.getAttribute('data-pf-key'), pf.getAttribute('data-pf-val') === 'true'); return; }
       const drop = e.target.closest('[data-photo-trigger]');
@@ -279,6 +301,7 @@ class CleanlinessAudit extends HTMLElement {
     this._active.vehicle = !!(this._user && this._user.vehicleNumber && String(this._user.vehicleNumber).trim());
     this._active.office = !!(this._user && this._user.hasOffice);
     this._vehicleNoun = (this._user && this._user.vehicleNoun) ? String(this._user.vehicleNoun).toLowerCase() : 'vehicle';
+    this._editing = false;
     this._renderPage();
   }
 
@@ -357,6 +380,8 @@ class CleanlinessAudit extends HTMLElement {
     this._$('lockedView').style.display = 'none';
     this._$('submittedView').style.display = 'none';
     this._$('successView').style.display = 'none';
+    this._$('editNotice').style.display = this._editing ? '' : 'none';
+    this._$('cancelEditBtn').style.display = this._editing ? '' : 'none';
 
     const container = this._$('sectionsContainer');
     container.innerHTML = '';
@@ -401,8 +426,11 @@ class CleanlinessAudit extends HTMLElement {
     this._$('submittedView').style.display = '';
     this._$('submitView').style.display = 'none';
     this._$('successView').style.display = 'none';
-    this._$('submittedSubtext').textContent =
-      `Submitted ${new Date(report.submittedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+    const submittedText = `Submitted ${new Date(report.submittedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+    const editedText = report.lastEditedDate
+      ? ` · Edited ${new Date(report.lastEditedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+      : '';
+    this._$('submittedSubtext').textContent = submittedText + editedText;
     this._$('submittedWeekLabel').textContent = `Week of ${formatWeekRange(report.weekStart)}`;
     this._$('ro-score').textContent = `${report.score}%`;
 
@@ -427,6 +455,56 @@ class CleanlinessAudit extends HTMLElement {
       if (imgs.length) html += `<div class="ro-gallery">${imgs.map(u => `<img src="${esc(u)}" alt="audit photo">`).join('')}</div>`;
       body.innerHTML += html;
     });
+  }
+
+  // Reopen the form pre-filled with the existing submission — untouched photo slots keep their
+  // current URL (no re-upload needed) since _photos is seeded from the report before the form
+  // renders; a slot the person does replace just runs the normal upload-photo flow and overwrites
+  // that one entry.
+  _startEdit() {
+    if (!this._existing || isAuditLocked(new Date())) { this._showLocked(); return; }
+    this._editing = true;
+    this._answers = { vehicle: {}, office: {} };
+    const parsed = asObj(this._existing.answers);
+    SECTION_ORDER.forEach(section => { if (parsed[section]) this._answers[section] = { ...parsed[section] }; });
+    this._photos = { ...asObj(this._existing.photoUrls) };
+    this._photoPending = {};
+    this._showForm();
+    this._prefillForm();
+  }
+
+  _cancelEdit() {
+    this._editing = false;
+    this._answers = { vehicle: {}, office: {} };
+    this._photos = {};
+    this._photoPending = {};
+    this._showSubmitted(this._existing);
+  }
+
+  _prefillForm() {
+    SECTION_ORDER.forEach(section => {
+      if (!this._active[section]) return;
+      const cfg = SECTIONS[section];
+      cfg.checklist.forEach(item => {
+        if (!(item.key in this._answers[section])) return;
+        const pass = this._answers[section][item.key] === true;
+        const passBtn = this._$(`pf-${section}-${item.key}-pass`);
+        const failBtn = this._$(`pf-${section}-${item.key}-fail`);
+        if (passBtn) passBtn.classList.toggle('sel', pass);
+        if (failBtn) failBtn.classList.toggle('sel', !pass);
+      });
+      cfg.photos.forEach(p => {
+        const url = this._photos[pid(section, p.key)];
+        if (!url) return;
+        const img = this._$(`img-${section}-${p.key}`);
+        const prev = this._$(`prev-${section}-${p.key}`);
+        const stat = this._$(`stat-${section}-${p.key}`);
+        if (img) img.src = url;
+        if (prev) prev.style.display = 'block';
+        if (stat) stat.textContent = '✓ On file — tap above to replace';
+      });
+    });
+    this._updateSubmitState();
   }
 
   _setAnswer(section, key, pass) {
@@ -492,7 +570,9 @@ class CleanlinessAudit extends HTMLElement {
     const btn = this._$('submitBtn');
     if (!btn) return;
     btn.disabled = uploading || this._pending;
-    btn.textContent = uploading ? 'Waiting for photos…' : (this._pending ? 'Submitting…' : 'Submit Cleanliness Audit');
+    btn.textContent = uploading ? 'Waiting for photos…'
+      : this._pending ? (this._editing ? 'Saving…' : 'Submitting…')
+      : (this._editing ? 'Save Changes' : 'Submit Cleanliness Audit');
   }
 
   _submit() {
@@ -572,11 +652,15 @@ class CleanlinessAudit extends HTMLElement {
     try { r = JSON.parse(json); } catch (e) { return; }
     this._pending = false;
     if (r.ok) {
+      const wasEditing = this._editing;
       this._existing = r.report;
+      this._editing = false;
       this._$('submitView').style.display = 'none';
       this._$('submittedView').style.display = 'none';
       this._$('successView').style.display = '';
-      this._$('successMsg').textContent = `Your cleanliness audit (${r.report.score}%) has been saved. See you next week!`;
+      this._$('successMsg').textContent = wasEditing
+        ? `Your cleanliness audit has been updated (${r.report.score}%).`
+        : `Your cleanliness audit (${r.report.score}%) has been saved. See you next week!`;
     } else {
       this._updateSubmitState();
       const banner = this._$('valBanner');
