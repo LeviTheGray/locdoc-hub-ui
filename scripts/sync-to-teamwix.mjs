@@ -48,7 +48,7 @@ const ELEMENTS = [
   'cleanliness-report.js', 'credit-card-report.js', 'wednesday-meeting.js', 'mission-vision.js',
   'core-values-data.js', 'core-values.js', 'resources-hub.js',
   'meetings.js', 'annual-events.js', 'company-holidays.js', 'benefits.js',
-  'shop.js', 'employee-lifecycle.js', 'employee-management.js',
+  'shop.js', 'employee-lifecycle.js', 'employee-management.js', 'fleet-management.js',
 ];
 const targets = [
   { src: 'src/scoring-core.js', to: join(teamwix, 'src', 'backend', 'scoring-core.js'), mode: 'replace' },

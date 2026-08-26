@@ -6,13 +6,14 @@
  * has its own access rule and is shown/hidden independently, not gated by one blanket check:
  *   • Onboarding & Offboarding — active, links to the existing /onboarding page
  *     (employee-lifecycle.js). Shown if `canOnboard` (backend/lifecycleAuth.js allowlist).
- *   • Fleet Management  — shown if `isManager`. Not built yet — renders disabled/"Coming soon".
+ *   • Fleet Management  — shown if `isManager`. Active — links to /fleet-management
+ *     (fleet-management.js, backend/fleetManagement.web.js).
  *   • Bonus Payout Calculator — shown if `isOperations`. Not built yet — disabled/"Coming soon".
  * New tools get added here the same way — one more entry in TOOLS, its own visibility rule.
  *
  * Data handoff:
  *   • Velo → element :  init-data { currentUser, canOnboard, isManager, isOperations } | { error }
- *   • element → Velo :  'navigate' { detail: { key: 'onboarding' | 'hub' } }
+ *   • element → Velo :  'navigate' { detail: { key: 'onboarding' | 'fleet' | 'hub' } }
  *
  * Editor: Add → Embed Code → Custom Element → source = this file,
  * tag name `employee-management`, element ID `employeeManagement`.
@@ -28,7 +29,7 @@ const TOOLS = [
     active: true, visible: (a) => a.canOnboard },
   { key: 'fleet', icon: 'local_shipping', name: 'Fleet Management',
     desc: 'VIN, title, and other records for vehicles and trailers not tracked in Enterprise Fleet Management.',
-    active: false, visible: (a) => a.isManager },
+    active: true, visible: (a) => a.isManager },
   { key: 'bonus', icon: 'payments', name: 'Bonus Payout Calculator',
     desc: 'Enter the inputs for a payout and calculate what each person is owed.',
     active: false, visible: (a) => a.isOperations },
