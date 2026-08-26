@@ -7,6 +7,9 @@
  *
  * Data handoff (mirrors the old postMessage bridge):
  *   • Velo → element :  $w('#hubHome').setAttribute('init-data', JSON.stringify({ currentUser }))
+ *                       currentUser.canOnboard (from lifecycleAuth.js, merged in by page code)
+ *                       shows the Manager Reporting section — and its Employee Management tile —
+ *                       to someone allowlisted for onboarding even without a `manager` scope.
  *   • element → Velo :  dispatches a 'navigate' CustomEvent { detail: { key } };
  *                       the page code maps key → path and calls wixLocation.to().
  *
@@ -16,7 +19,7 @@
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
 
-const PAGE_KEYS = ['assessment', 'weeklyReport', 'myReports', 'cleanlinessAudit', 'teamReports', 'cleanlinessReport', 'oneOnOne', 'techSpotlight'];
+const PAGE_KEYS = ['assessment', 'weeklyReport', 'myReports', 'cleanlinessAudit', 'teamReports', 'cleanlinessReport', 'oneOnOne', 'techSpotlight', 'employeeManagement'];
 
 // Three-level layout:
 //   scorecard → top row (My Scorecard, full width)
@@ -49,6 +52,9 @@ const ALL_TOOLS = [
   { key: 'oneOnOne', level: 'manager', icon: 'handshake', name: 'Submit a 1:1',
     desc: 'Log a one-on-one meeting with a team member you manage — notes and follow-ups, counted on their scorecard.',
     btnText: 'Submit a 1:1' },
+  { key: 'employeeManagement', level: 'manager', icon: 'admin_panel_settings', name: 'Employee Management',
+    desc: 'Onboarding/offboarding, fleet records, and bonus payouts — grouped admin tools, access varies by tool.',
+    btnText: 'Open Employee Management' },
 ];
 
 const STYLES = `
@@ -227,7 +233,9 @@ class HubHome extends HTMLElement {
     root.querySelector('[data-tools]').innerHTML =
       ALL_TOOLS.filter(t => t.level === 'scorecard' || t.level === 'submit').map(t => this._card(t)).join('');
 
-    const isManager = !!(u && (u.manager || '').trim());
+    // Employee Management is also shown to someone allowlisted for onboarding-only access
+    // (canOnboard, from lifecycleAuth.js) even if they aren't a department manager — e.g. Levi.
+    const isManager = !!(u && ((u.manager || '').trim() || u.canOnboard));
     const managerTools = ALL_TOOLS.filter(t => t.level === 'manager');
     const section = root.querySelector('[data-manager-section]');
     if (isManager && managerTools.length) {
