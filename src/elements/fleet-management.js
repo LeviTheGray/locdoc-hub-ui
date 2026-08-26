@@ -23,7 +23,7 @@
  * Asset shape matches the FleetAssets collection as imported from the legacy fleet tracker (field
  * keys are the exact ones Wix generated on CSV import; two-word labels camelCase, "NC Quickpass #"
  * became `ncQuickpass`):
- *   { _id?, title, unitnumber, model, ncQuickpass, dateAdded, year, make, color, vin,
+ *   { _id?, title, unitNumber, model, ncQuickpass, dateAdded, year, make, color, vin,
  *     plateNumber, assignedTo, assignedToName, status:'Active'|'Retired' }
  * `assignedTo` is an Employees `_id` for newly-created records (picked from a dropdown so it's
  * searchable/consistent) — existing legacy rows still hold a plain typed name instead, since
@@ -43,7 +43,7 @@
 import { styles, ensureMaterialSymbols } from './tokens.js';
 
 const FIELDS = [
-  { key: 'unitnumber', label: 'Van / Unit #', type: 'text', half: true },
+  { key: 'unitNumber', label: 'Van / Unit #', type: 'text', half: true },
   { key: 'plateNumber', label: 'Plate #', type: 'text', half: true },
   { key: 'assignedTo', label: 'Assigned to', type: 'employee-select', half: true },
   { key: 'status', label: 'Status', type: 'select', options: [['Active', 'Active'], ['Retired', 'Retired']], half: true },
@@ -132,6 +132,7 @@ class FleetManagement extends HTMLElement {
     this._msg = null;
     this._draft = null;    // non-null while the add form is open
     this._copyValue = null;
+    this._showRetired = false;
     this._shell = false;
   }
 
@@ -224,6 +225,7 @@ class FleetManagement extends HTMLElement {
       if (archiveBtn) return this._setArchived(archiveBtn.getAttribute('data-archive'), true);
       const restoreBtn = e.target.closest('[data-restore]');
       if (restoreBtn) return this._setArchived(restoreBtn.getAttribute('data-restore'), false);
+      if (e.target.closest('[data-toggle-retired]')) return this._toggleRetired();
       const chip = e.target.closest('[data-copy-value]');
       if (chip) return this._openCopy(chip.getAttribute('data-copy-label'), chip.getAttribute('data-copy-value'));
       if (e.target.closest('[data-copy-pop-btn]')) return this._copyNow();
@@ -268,7 +270,7 @@ class FleetManagement extends HTMLElement {
   _save() {
     if (this._saving || !this._draft) return;
     const d = this._draft;
-    if (!(d.unitnumber || '').trim() && !(d.vin || '').trim()) {
+    if (!(d.unitNumber || '').trim() && !(d.vin || '').trim()) {
       this._msg = { ok: false, text: 'Enter at least a unit number or VIN.' };
       return this._render();
     }
@@ -311,6 +313,11 @@ class FleetManagement extends HTMLElement {
   _closeCopy() {
     const pop = this.shadowRoot.querySelector('[data-copy-pop]');
     if (pop) pop.style.display = 'none';
+  }
+
+  _toggleRetired() {
+    this._showRetired = !this._showRetired;
+    this._render();
   }
 
   _setArchived(id, archived) {
@@ -376,22 +383,32 @@ class FleetManagement extends HTMLElement {
         <input type="text" id="q" placeholder="Search unit #, plate, VIN, make, model, assigned to…">
         <button class="btn" data-search>Search</button>
         <button class="btn ghost" data-add>+ Add asset</button>
+        <button class="btn ghost" data-toggle-retired>${this._showRetired ? 'Hide retired vehicles' : 'Show retired vehicles'}</button>
       </div>
       <div class="list">${this._listBody()}</div>
     </div>`;
   }
 
+  _visibleItems() {
+    return this._showRetired ? this._items : this._items.filter((a) => a.status !== 'Retired');
+  }
+
   _listBody() {
     if (!this._listed) return `<p class="empty">Loading fleet records…</p>`;
-    if (!this._items.length) return `<p class="empty">No fleet records yet — add one above.</p>`;
-    return this._items.map((a) => this._assetCard(a)).join('');
+    const visible = this._visibleItems();
+    if (!visible.length) {
+      return this._items.length
+        ? `<p class="empty">No active fleet records — <button class="link" style="margin:0;display:inline" data-toggle-retired>show retired vehicles</button> to see them.</p>`
+        : `<p class="empty">No fleet records yet — add one above.</p>`;
+    }
+    return visible.map((a) => this._assetCard(a)).join('');
   }
 
   _assetCard(a) {
     // Unit # and plate, both individually click-to-copy, are the two things someone's actually
     // looking for at a glance — "Vehicle 139 - EBM3133".
     const idParts = [];
-    if (a.unitnumber) idParts.push(copyChip('Unit #', a.unitnumber));
+    if (a.unitNumber) idParts.push(copyChip('Unit #', a.unitNumber));
     if (a.plateNumber) idParts.push(copyChip('Plate #', a.plateNumber));
     const heading = idParts.length ? `Vehicle ${idParts.join(' - ')}`
       : (a.vin ? copyChip('VIN', a.vin) : (a.title ? copyChip('Title', a.title) : '(no unit # or plate)'));
