@@ -90,12 +90,29 @@ const STYLES = styles(`
   .msg.err { display: block; background: #fee2e2; color: #b91c1c; }
   .msg.ok  { display: block; background: #d1fae5; color: var(--primary-dk); }
   .link { background: none; border: none; color: var(--primary-dk); font-weight: 700; font-size: 14px; cursor: pointer; margin-top: 20px; }
+  .copy-chip { border-bottom: 1.5px dotted var(--gray-400); cursor: pointer; }
+  .copy-chip:hover { color: var(--primary-dk); border-bottom-color: var(--primary-dk); }
+  .copy-pop { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 100;
+    background: #fff; border: 1.5px solid var(--gray-200); border-radius: 12px; box-shadow: var(--shadow-md);
+    padding: 14px 16px; width: min(92vw, 360px); }
+  .copy-pop-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--gray-400); margin-bottom: 6px; }
+  .copy-pop-row { display: flex; gap: 8px; }
+  .copy-pop-row input { flex: 1; font-weight: 700; }
+  .copy-pop-status { font-size: 12px; color: var(--primary-dk); margin-top: 6px; min-height: 15px; }
   @media (max-width: 560px) { .field-grid { grid-template-columns: 1fr; } }
 `);
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Renders a value as click-to-copy — tapping it opens a small box (see #copyPop in the shell)
+// with the raw value in a readonly, pre-selected input so it's copyable everywhere (the Clipboard
+// API is tried too, as a one-tap shortcut, but the selected input is the reliable fallback).
+function copyChip(label, value) {
+  if (!value) return '';
+  return `<span class="copy-chip" data-copy-label="${esc(label)}" data-copy-value="${esc(value)}">${esc(value)}</span>`;
 }
 
 class FleetManagement extends HTMLElement {
@@ -114,6 +131,7 @@ class FleetManagement extends HTMLElement {
     this._archivingId = null;
     this._msg = null;
     this._draft = null;    // non-null while the add form is open
+    this._copyValue = null;
     this._shell = false;
   }
 
@@ -187,7 +205,15 @@ class FleetManagement extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${STYLES}</style>
       <header class="header"><h1>🚐 Fleet Management</h1>
         <p>VIN, title, and registration records for vehicles and trailers not tracked in Enterprise Fleet Management.</p></header>
-      <main class="main" data-main></main>`;
+      <main class="main" data-main></main>
+      <div class="copy-pop" data-copy-pop style="display:none">
+        <div class="copy-pop-label" data-copy-pop-label></div>
+        <div class="copy-pop-row">
+          <input type="text" readonly data-copy-pop-input>
+          <button type="button" class="btn sm" data-copy-pop-btn>Copy</button>
+        </div>
+        <div class="copy-pop-status" data-copy-pop-status></div>
+      </div>`;
 
     this.shadowRoot.addEventListener('click', (e) => {
       if (e.target.closest('[data-search]')) return this._search();
@@ -198,6 +224,10 @@ class FleetManagement extends HTMLElement {
       if (archiveBtn) return this._setArchived(archiveBtn.getAttribute('data-archive'), true);
       const restoreBtn = e.target.closest('[data-restore]');
       if (restoreBtn) return this._setArchived(restoreBtn.getAttribute('data-restore'), false);
+      const chip = e.target.closest('[data-copy-value]');
+      if (chip) return this._openCopy(chip.getAttribute('data-copy-label'), chip.getAttribute('data-copy-value'));
+      if (e.target.closest('[data-copy-pop-btn]')) return this._copyNow();
+      if (!e.target.closest('[data-copy-pop]')) this._closeCopy();
       if (e.target.closest('[data-nav]')) {
         this.dispatchEvent(new CustomEvent('navigate', { detail: { key: 'hub' }, bubbles: true, composed: true }));
       }
@@ -246,6 +276,41 @@ class FleetManagement extends HTMLElement {
     this._msg = null;
     this._render();
     this.dispatchEvent(new CustomEvent('save-asset', { detail: { asset: { ...d } }, bubbles: true, composed: true }));
+  }
+
+  // Click-to-copy popover: opens with the value pre-filled and selected in a readonly input, so
+  // the browser/OS copy shortcut works even if the Clipboard API write below is blocked (e.g. no
+  // clipboard permission in this embed context) — that's tried too, as a one-tap shortcut.
+  _openCopy(label, value) {
+    this._copyValue = value;
+    const input = this.shadowRoot.querySelector('[data-copy-pop-input]');
+    this.shadowRoot.querySelector('[data-copy-pop-label]').textContent = label;
+    this.shadowRoot.querySelector('[data-copy-pop-status]').textContent = '';
+    input.value = value;
+    this.shadowRoot.querySelector('[data-copy-pop]').style.display = '';
+    requestAnimationFrame(() => { input.focus(); input.select(); });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(() => {
+        const status = this.shadowRoot.querySelector('[data-copy-pop-status]');
+        if (status) status.textContent = 'Copied ✓';
+      }).catch(() => { /* clipboard permission denied — the selected input is the fallback */ });
+    }
+  }
+
+  _copyNow() {
+    const input = this.shadowRoot.querySelector('[data-copy-pop-input]');
+    input.focus(); input.select();
+    if (navigator.clipboard && navigator.clipboard.writeText && this._copyValue != null) {
+      navigator.clipboard.writeText(this._copyValue).then(() => {
+        const status = this.shadowRoot.querySelector('[data-copy-pop-status]');
+        if (status) status.textContent = 'Copied ✓';
+      }).catch(() => { /* selection above is still there for a manual copy */ });
+    }
+  }
+
+  _closeCopy() {
+    const pop = this.shadowRoot.querySelector('[data-copy-pop]');
+    if (pop) pop.style.display = 'none';
   }
 
   _setArchived(id, archived) {
@@ -323,20 +388,27 @@ class FleetManagement extends HTMLElement {
   }
 
   _assetCard(a) {
-    // Van/unit # and plate are the two things someone's actually looking for at a glance.
-    const heading = [a.unitnumber ? `Van ${a.unitnumber}` : '', a.plateNumber ? `Plate ${a.plateNumber}` : '']
-      .filter(Boolean).join(' · ') || (a.vin || a.title || '(no unit # or plate)');
+    // Unit # and plate, both individually click-to-copy, are the two things someone's actually
+    // looking for at a glance — "Vehicle 139 - EBM3133".
+    const idParts = [];
+    if (a.unitnumber) idParts.push(copyChip('Unit #', a.unitnumber));
+    if (a.plateNumber) idParts.push(copyChip('Plate #', a.plateNumber));
+    const heading = idParts.length ? `Vehicle ${idParts.join(' - ')}`
+      : (a.vin ? copyChip('VIN', a.vin) : (a.title ? copyChip('Title', a.title) : '(no unit # or plate)'));
     const vehicleLine = [a.year, a.make, a.model, a.color].filter(Boolean).join(' ');
-    const meta = [vehicleLine, a.vin ? `VIN ${a.vin}` : ''].filter(Boolean).map(esc).join(' · ');
-    const meta2 = [a.assignedToName ? `Assigned: ${a.assignedToName}` : '', a.ncQuickpass ? `Quickpass #${a.ncQuickpass}` : '', a.dateAdded ? `Added ${a.dateAdded}` : '']
-      .filter(Boolean).map(esc).join(' · ');
+    const meta = [esc(vehicleLine), a.vin ? `VIN ${copyChip('VIN', a.vin)}` : ''].filter(Boolean).join(' · ');
+    const meta2 = [
+      a.assignedToName ? `Assigned: ${copyChip('Assigned to', a.assignedToName)}` : '',
+      a.ncQuickpass ? `Quickpass #${copyChip('NC Quickpass #', a.ncQuickpass)}` : '',
+      a.dateAdded ? `Added ${esc(a.dateAdded)}` : '',
+    ].filter(Boolean).join(' · ');
     const busy = this._archivingId === a._id;
     const retired = a.status === 'Retired';
 
     return `<div class="asset card ${retired ? 'is-retired' : ''}">
       <div class="top">
         <div class="info">
-          <div class="name">${esc(heading)} <span class="pill ${retired ? '' : 'on'}">${esc(a.status || 'Active')}</span></div>
+          <div class="name">${heading} <span class="pill ${retired ? '' : 'on'}">${esc(a.status || 'Active')}</span></div>
           ${meta ? `<div class="meta">${meta}</div>` : ''}
           ${meta2 ? `<div class="meta">${meta2}</div>` : ''}
         </div>
