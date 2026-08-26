@@ -8,11 +8,20 @@
  * (non-excluded) employee, so suggestedBonus = Σ(share × pool) over the three dimensions,
  * rounded to the nearest dollar for payroll.
  *
- * Two-step flow:
+ * Setting the pool and generating payouts are two separate steps, usually done by two different
+ * people (per Levi, 2026-08-26): the accounting manager sets the Bonus Pool amount for a period;
+ * separately, whoever runs payroll (C-Suite) opens the tool later and generates/audits suggested
+ * payouts against whatever pool was set. So the pool is fetched/saved server-side per period
+ * (backend/bonusCalculator.web.js's BonusPools collection), not just held in the browser —
+ * Generate is a no-op with an inline error if no pool has been set yet for the selected period.
+ *
+ * Flow:
  *   1. Pick a period (bonuses are monthly — dropdown of last/this/next month, e.g. "August 2026",
- *      defaulting to the current month) + enter a pool amount, click Generate → backend returns every eligible
- *      employee's raw Reliability score + per-criterion breakdown (from AssessmentScores,
- *      trailing 190 days) and Tenure years (from Employees.startDate).
+ *      defaulting to the current month). "Set Bonus Pool" saves an amount for that period (shows
+ *      whatever's currently set, if anything). Separately, "Generate suggested payouts" reads
+ *      that saved pool and returns every eligible employee's raw Reliability score +
+ *      per-criterion breakdown (from AssessmentScores, trailing 190 days) and Tenure years (from
+ *      Employees.startDate) — refuses with an error if no pool exists for the period yet.
  *   2. Review table, one row per employee. Reliability/Tenure are read-only (computed).
  *      Profitability isn't a solved formula yet — the old app defaulted it to a flat 3 — so it's
  *      an editable number here, defaulting to 3, VISIBLY a placeholder rather than a hidden
@@ -28,13 +37,19 @@
  *
  * Data handoff:
  *   • Velo → element :  init-data       { canManage } | { error }
- *                       generate-result { items:[RawRow] } | { error }              (carries _ts)
+ *                       pool-result     { pool: Pool|null } | { error }             (carries _ts)
+ *                       save-pool-result{ ok:true, pool:Pool } | { ok:false, error } (carries _ts)
+ *                       generate-result { poolAmount, setByName, setDate, items:[RawRow] } | { error } (carries _ts)
  *                       save-result     { ok:true } | { ok:false, error }           (carries _ts)
  *                       history-result  { items:[SavedRow] } | { error }            (carries _ts)
- *   • element → Velo :  'generate-run' {}
+ *   • element → Velo :  'get-pool'     { period }
+ *                       'save-pool'    { period, poolAmount }
+ *                       'generate-run' { period }
  *                       'save-run'     { period, poolAmount, records:[FinalRow] }
  *                       'list-history' { term }
  *                       'navigate'     { key: 'hub' }
+ *
+ * Pool: { period, poolAmount, setByName, setDate }.
  *
  * RawRow: { employeeId, employeeName, reliabilityScore, hasAssessmentData, reliabilityBreakdown,
  * assessmentCount, tenureYears, hasStartDate, startDate }.
@@ -139,7 +154,7 @@ const STYLES = styles(`
 `);
 
 class BonusCalculator extends HTMLElement {
-  static get observedAttributes() { return ['init-data', 'generate-result', 'save-result', 'history-result']; }
+  static get observedAttributes() { return ['init-data', 'pool-result', 'save-pool-result', 'generate-result', 'save-result', 'history-result']; }
 
   constructor() {
     super();
@@ -150,8 +165,12 @@ class BonusCalculator extends HTMLElement {
     this._generating = false;
     this._saving = false;
     this._msg = null;
-    this._period = monthOptions()[1]; // defaults to the current month
-    this._poolAmount = '';
+    this._period = monthOptions()[1]; // defaults to the current month, shared by both steps
+    this._poolInput = '';        // the "set pool" step's editable field
+    this._currentPool = undefined; // undefined = not fetched yet, null = fetched, none set
+    this._savingPool = false;
+    this._poolMsg = null;
+    this._poolAmount = null;     // the locked-in pool amount for the generated run (read-only)
     this._rows = null;       // null until a run is generated
     this._openInfo = null;   // index of the row whose detail panel is expanded
     this._history = [];
@@ -168,10 +187,12 @@ class BonusCalculator extends HTMLElement {
 
   attributeChangedCallback(name, _old, value) {
     if (!value) return;
-    if (name === 'init-data')       this._applyInit(value);
-    if (name === 'generate-result') this._applyGenerate(value);
-    if (name === 'save-result')     this._applySave(value);
-    if (name === 'history-result')  this._applyHistory(value);
+    if (name === 'init-data')        this._applyInit(value);
+    if (name === 'pool-result')      this._applyPool(value);
+    if (name === 'save-pool-result') this._applySavePool(value);
+    if (name === 'generate-result')  this._applyGenerate(value);
+    if (name === 'save-result')      this._applySave(value);
+    if (name === 'history-result')   this._applyHistory(value);
   }
 
   _$(id) { return this.shadowRoot.getElementById(id); }
@@ -182,7 +203,35 @@ class BonusCalculator extends HTMLElement {
     this._canManage = Boolean(p.canManage);
     this._error = p.error || null;
     this._loaded = true;
-    if (this._canManage && !this._historyLoaded) this._loadHistory();
+    if (this._canManage) {
+      if (!this._historyLoaded) this._loadHistory();
+      this._fetchPool();
+    }
+    this._render();
+  }
+
+  _fetchPool() {
+    this.dispatchEvent(new CustomEvent('get-pool', { detail: { period: this._period }, bubbles: true, composed: true }));
+  }
+
+  _applyPool(json) {
+    let p = {};
+    try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
+    this._currentPool = p.pool || null;
+    if (this._currentPool) this._poolInput = String(this._currentPool.poolAmount);
+    this._render();
+  }
+
+  _applySavePool(json) {
+    let p = {};
+    try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
+    this._savingPool = false;
+    if (p.ok) {
+      this._currentPool = p.pool;
+      this._poolMsg = { ok: true, text: `Bonus pool set to ${money(p.pool.poolAmount)} for ${p.pool.period}.` };
+    } else {
+      this._poolMsg = { ok: false, text: p.error || 'Could not save the bonus pool.' };
+    }
     this._render();
   }
 
@@ -191,6 +240,7 @@ class BonusCalculator extends HTMLElement {
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
     this._generating = false;
     if (p.error) { this._msg = { ok: false, text: p.error }; this._render(); return; }
+    this._poolAmount = p.poolAmount;
     this._rows = (p.items || []).map((r) => ({ ...r, profitabilityScore: DEFAULT_PROFITABILITY, status: 'pending' }));
     this._openInfo = null;
     this._msg = null;
@@ -204,8 +254,7 @@ class BonusCalculator extends HTMLElement {
     if (p.ok) {
       this._msg = { ok: true, text: `Saved ${this._rows.length} payout${this._rows.length === 1 ? '' : 's'} for ${this._period || 'this run'}.` };
       this._rows = null;
-      this._period = monthOptions()[1];
-      this._poolAmount = '';
+      this._poolAmount = null;
       this._loadHistory();
     } else {
       this._msg = { ok: false, text: p.error || 'Save failed.' };
@@ -230,6 +279,7 @@ class BonusCalculator extends HTMLElement {
       <main class="main" data-main></main>`;
 
     this.shadowRoot.addEventListener('click', (e) => {
+      if (e.target.closest('[data-save-pool]')) return this._savePool();
       if (e.target.closest('[data-generate]')) return this._generate();
       if (e.target.closest('[data-save-run]')) return this._saveRun();
       if (e.target.closest('[data-new-run]')) return this._newRun();
@@ -246,8 +296,7 @@ class BonusCalculator extends HTMLElement {
     });
     this.shadowRoot.addEventListener('input', (e) => {
       const field = e.target.getAttribute && e.target.getAttribute('data-field');
-      if (field === 'period') this._period = e.target.value;
-      if (field === 'poolAmount') { this._poolAmount = e.target.value; if (this._rows) this._renderTable(); }
+      if (field === 'poolInput') this._poolInput = e.target.value;
       const rowField = e.target.getAttribute && e.target.getAttribute('data-row-field');
       if (rowField === 'profitabilityScore' && this._rows) {
         const i = Number(e.target.getAttribute('data-row-index'));
@@ -256,19 +305,44 @@ class BonusCalculator extends HTMLElement {
       }
     });
     this.shadowRoot.addEventListener('change', (e) => {
-      if (e.target.getAttribute && e.target.getAttribute('data-field') === 'period') this._period = e.target.value;
+      if (e.target.getAttribute && e.target.getAttribute('data-field') === 'period') this._onPeriodChange(e.target.value);
     });
     this.shadowRoot.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target && e.target.id === 'hq') { e.preventDefault(); this._searchHistory(); }
     });
   }
 
+  _onPeriodChange(value) {
+    this._period = value;
+    this._currentPool = undefined;
+    this._poolInput = '';
+    this._poolMsg = null;
+    this._render();
+    this._fetchPool();
+  }
+
+  _savePool() {
+    if (this._savingPool) return;
+    const amount = Number(this._poolInput);
+    if (!(amount > 0)) { this._poolMsg = { ok: false, text: 'Enter a bonus pool amount greater than $0.' }; return this._render(); }
+    this._savingPool = true;
+    this._poolMsg = null;
+    this._render();
+    this.dispatchEvent(new CustomEvent('save-pool', { detail: { period: this._period, poolAmount: amount }, bubbles: true, composed: true }));
+  }
+
   _generate() {
     if (this._generating) return;
+    // Fail fast client-side (per the ask: Generate should error without a pool) — the backend
+    // double-checks this too, in case _currentPool is stale (e.g. someone else just set one).
+    if (!this._currentPool) {
+      this._msg = { ok: false, text: `No bonus pool has been set for ${this._period} yet — set one above first.` };
+      return this._render();
+    }
     this._generating = true;
     this._msg = null;
     this._render();
-    this.dispatchEvent(new CustomEvent('generate-run', { detail: {}, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('generate-run', { detail: { period: this._period }, bubbles: true, composed: true }));
   }
 
   _newRun() {
@@ -370,14 +444,29 @@ class BonusCalculator extends HTMLElement {
 
   _startSection() {
     const opts = monthOptions().map((m) => `<option value="${esc(m)}" ${this._period === m ? 'selected' : ''}>${esc(m)}</option>`).join('');
-    return `<div class="section card" style="padding:18px 20px">
-      <h2>Start a bonus run</h2>
+    const periodPicker = `<div><label class="f">Period</label><select data-field="period">${opts}</select></div>`;
+
+    let poolStatus;
+    if (this._currentPool === undefined) poolStatus = `<p class="empty" style="padding:6px 0 0">Checking…</p>`;
+    else if (this._currentPool) poolStatus = `<p class="empty" style="padding:6px 0 0;color:var(--primary-dk)">Currently set to ${money(this._currentPool.poolAmount)}, by ${esc(this._currentPool.setByName)} on ${esc(this._currentPool.setDate)}.</p>`;
+    else poolStatus = `<p class="empty" style="padding:6px 0 0">No bonus pool has been set for ${esc(this._period)} yet.</p>`;
+
+    return `
+    <div class="section card" style="padding:18px 20px">
+      <h2>Step 1 — Set Bonus Pool <span style="font-weight:400;color:var(--gray-400);text-transform:none;letter-spacing:0;font-size:12px">(usually the accounting manager)</span></h2>
       <div class="row2">
-        <div><label class="f">Period</label>
-          <select data-field="period">${opts}</select></div>
-        <div><label class="f">Bonus Pool</label>
-          <input type="number" step="0.01" data-field="poolAmount" placeholder="0.00" value="${esc(this._poolAmount)}"></div>
+        ${periodPicker}
+        <div><label class="f">Bonus Pool amount</label>
+          <input type="number" step="0.01" data-field="poolInput" placeholder="0.00" value="${esc(this._poolInput)}"></div>
       </div>
+      ${poolStatus}
+      ${this._poolMsg ? `<div class="msg ${this._poolMsg.ok ? 'ok' : 'err'}" style="margin-top:10px">${esc(this._poolMsg.text)}</div>` : ''}
+      <button class="btn ${this._savingPool ? 'is-loading' : ''}" data-save-pool style="margin-top:16px">
+        ${this._savingPool ? '<span class="btn-spinner"></span>Saving…' : 'Set Bonus Pool'}</button>
+    </div>
+    <div class="section card" style="padding:18px 20px">
+      <h2>Step 2 — Generate Payouts <span style="font-weight:400;color:var(--gray-400);text-transform:none;letter-spacing:0;font-size:12px">(usually C-Suite / payroll)</span></h2>
+      <div class="sub" style="margin-bottom:0">Period: <strong>${esc(this._period)}</strong> — generates against whatever pool was set in Step 1.</div>
       <button class="btn ${this._generating ? 'is-loading' : ''}" data-generate style="margin-top:16px">
         ${this._generating ? '<span class="btn-spinner"></span>Generating…' : 'Generate suggested payouts'}</button>
     </div>`;
