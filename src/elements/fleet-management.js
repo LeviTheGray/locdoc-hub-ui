@@ -2,27 +2,36 @@
  * Wix Custom Element — Fleet Management  (<fleet-management>)
  *
  * A VIN/title registry for vehicles and trailers not tracked in Enterprise Fleet Management.
- * Any manager can view, add, edit, or delete a record — access is company-wide, not scoped to a
+ * Any manager can view, add, or archive a record — access is company-wide, not scoped to a
  * department (fleet assets aren't department-specific the way employees are).
  *
- * Data handoff (mirrors employee-lifecycle.js's admin-panel shape):
- *   • Velo → element :  init-data    { canManage } | { error }
- *                       list-result  { items:[Asset] } | { error }               (carries _ts)
- *                       save-result  { ok:true, asset:Asset } | { ok:false, error } (carries _ts)
- *                       delete-result{ ok:true, id } | { ok:false, error }        (carries _ts)
- *   • element → Velo :  'list-assets'   { term }
- *                       'save-asset'    { asset: Asset }   // asset._id present = edit, else create
- *                       'delete-asset'  { id }
- *                       'navigate'      { key: 'hub' }
+ * No edit — the fields here (VIN, title/record label, etc.) aren't things that change on an
+ * existing vehicle; a change in reality means a new vehicle record, not an edit to this one.
+ * No hard delete either — "removing" an asset means archiving it (status → Retired), so the
+ * record (and its history) stays around. Retired assets can be restored back to Active.
+ *
+ * Data handoff:
+ *   • Velo → element :  init-data      { canManage, employees:[{_id,name}] } | { error }
+ *                       list-result    { items:[Asset] } | { error }                  (carries _ts)
+ *                       save-result    { ok:true, asset:Asset } | { ok:false, error }  (carries _ts)
+ *                       archive-result { ok:true, asset:Asset } | { ok:false, error }  (carries _ts)
+ *   • element → Velo :  'list-assets'    { term }
+ *                       'save-asset'     { asset: Asset }        // always a new record — no _id
+ *                       'archive-asset'  { id, archived: boolean } // true = retire, false = restore
+ *                       'navigate'       { key: 'hub' }
  *
  * Asset shape matches the FleetAssets collection as imported from the legacy fleet tracker (field
- * keys below are the exact ones Wix generated on CSV import — see this file's git history for the
- * discussion; two-word labels camelCase, "NC Quickpass #" became `ncQuickpass`):
+ * keys are the exact ones Wix generated on CSV import; two-word labels camelCase, "NC Quickpass #"
+ * became `ncQuickpass`):
  *   { _id?, title, unitnumber, model, ncQuickpass, dateAdded, year, make, color, vin,
- *     plateNumber, assignedTo, status:'Active'|'Retired' }
- * No assetType/title-number/lienholder/registration fields — those were guessed before the real
- * data existed and don't apply to what's actually tracked (the imported "Title" column is an
- * internal record label/serial from the legacy system, not a legal vehicle title).
+ *     plateNumber, assignedTo, assignedToName, status:'Active'|'Retired' }
+ * `assignedTo` is an Employees `_id` for newly-created records (picked from a dropdown so it's
+ * searchable/consistent) — existing legacy rows still hold a plain typed name instead, since
+ * there's no reliable way to match old free-text names back to an employee record. The backend
+ * resolves whichever it is into `assignedToName` for display and search, so both kinds of rows
+ * work the same in the UI. No assetType/title-number/lienholder/registration fields — those were
+ * guessed before the real data existed and don't apply to what's actually tracked (the imported
+ * "Title" column is an internal record label/serial from the legacy system, not a legal title).
  *
  * The backend re-checks manager status on every method (backend/fleetManagement.web.js) — the
  * `canManage` flag here only decides what UI to paint.
@@ -34,15 +43,15 @@
 import { styles, ensureMaterialSymbols } from './tokens.js';
 
 const FIELDS = [
-  { key: 'unitnumber', label: 'Unit #', type: 'text', half: true },
+  { key: 'unitnumber', label: 'Van / Unit #', type: 'text', half: true },
+  { key: 'plateNumber', label: 'Plate #', type: 'text', half: true },
+  { key: 'assignedTo', label: 'Assigned to', type: 'employee-select', half: true },
   { key: 'status', label: 'Status', type: 'select', options: [['Active', 'Active'], ['Retired', 'Retired']], half: true },
   { key: 'make', label: 'Make', type: 'text', half: true },
   { key: 'model', label: 'Model', type: 'text', half: true },
   { key: 'year', label: 'Year', type: 'text', half: true },
   { key: 'color', label: 'Color', type: 'text', half: true },
-  { key: 'plateNumber', label: 'Plate #', type: 'text', half: true },
   { key: 'vin', label: 'VIN', type: 'text', half: true },
-  { key: 'assignedTo', label: 'Assigned to', type: 'text', half: true },
   { key: 'ncQuickpass', label: 'NC Quickpass #', type: 'text', half: true },
   { key: 'dateAdded', label: 'Date added', type: 'text', half: true },
   { key: 'title', label: 'Title / record label', type: 'text', half: true },
@@ -65,6 +74,7 @@ const STYLES = styles(`
   .searchbar .btn { flex-shrink: 0; }
   .list { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
   .asset { padding: 14px 16px 16px; }
+  .asset.is-retired { opacity: .7; }
   .asset .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .asset .info { flex: 1; min-width: 180px; }
   .asset .name { font-size: 15px; font-weight: 700; }
@@ -74,8 +84,6 @@ const STYLES = styles(`
   .asset .actions { display: flex; gap: 8px; }
   .btn.ghost { background: var(--gray-100); color: var(--gray-900); }
   .btn.ghost:hover { background: var(--gray-200); }
-  .btn.danger { background: var(--error); }
-  .btn.danger:hover { background: #8a1705; }
   .btn.sm { padding: 8px 12px; font-size: 13px; }
   .empty { font-size: 13px; color: var(--gray-400); padding: 12px 0; }
   .msg { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 14px; display: none; }
@@ -91,7 +99,7 @@ function esc(s) {
 }
 
 class FleetManagement extends HTMLElement {
-  static get observedAttributes() { return ['init-data', 'list-result', 'save-result', 'delete-result']; }
+  static get observedAttributes() { return ['init-data', 'list-result', 'save-result', 'archive-result']; }
 
   constructor() {
     super();
@@ -99,13 +107,13 @@ class FleetManagement extends HTMLElement {
     this._canManage = false;
     this._loaded = false;
     this._error = null;
+    this._employees = [];
     this._items = [];
     this._listed = false;
     this._saving = false;
-    this._deletingId = null;
+    this._archivingId = null;
     this._msg = null;
-    this._draft = null;    // non-null while the add/edit form is open
-    this._editingId = null;
+    this._draft = null;    // non-null while the add form is open
     this._shell = false;
   }
 
@@ -118,10 +126,10 @@ class FleetManagement extends HTMLElement {
 
   attributeChangedCallback(name, _old, value) {
     if (!value) return;
-    if (name === 'init-data')     this._applyInit(value);
-    if (name === 'list-result')   this._applyList(value);
-    if (name === 'save-result')   this._applySave(value);
-    if (name === 'delete-result') this._applyDelete(value);
+    if (name === 'init-data')      this._applyInit(value);
+    if (name === 'list-result')    this._applyList(value);
+    if (name === 'save-result')    this._applySave(value);
+    if (name === 'archive-result') this._applyArchive(value);
   }
 
   _$(id) { return this.shadowRoot.getElementById(id); }
@@ -130,6 +138,7 @@ class FleetManagement extends HTMLElement {
     let p = {};
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
     this._canManage = Boolean(p.canManage);
+    this._employees = Array.isArray(p.employees) ? p.employees : [];
     this._error = p.error || null;
     this._loaded = true;
     if (this._canManage && !this._listed) this._list();
@@ -149,27 +158,25 @@ class FleetManagement extends HTMLElement {
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
     this._saving = false;
     if (p.ok && p.asset) {
-      const a = p.asset;
-      const i = this._items.findIndex((x) => x._id === a._id);
-      if (i >= 0) this._items[i] = a; else this._items.unshift(a);
+      this._items.unshift(p.asset);
       this._msg = { ok: true, text: 'Saved.' };
       this._draft = null;
-      this._editingId = null;
     } else {
       this._msg = { ok: false, text: p.error || 'Save failed.' };
     }
     this._render();
   }
 
-  _applyDelete(json) {
+  _applyArchive(json) {
     let p = {};
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
-    this._deletingId = null;
-    if (p.ok) {
-      this._items = this._items.filter((x) => x._id !== p.id);
-      this._msg = { ok: true, text: 'Deleted.' };
+    this._archivingId = null;
+    if (p.ok && p.asset) {
+      const i = this._items.findIndex((x) => x._id === p.asset._id);
+      if (i >= 0) this._items[i] = p.asset;
+      this._msg = { ok: true, text: p.asset.status === 'Retired' ? 'Archived.' : 'Restored.' };
     } else {
-      this._msg = { ok: false, text: p.error || 'Delete failed.' };
+      this._msg = { ok: false, text: p.error || 'That failed.' };
     }
     this._render();
   }
@@ -184,18 +191,22 @@ class FleetManagement extends HTMLElement {
 
     this.shadowRoot.addEventListener('click', (e) => {
       if (e.target.closest('[data-search]')) return this._search();
-      if (e.target.closest('[data-add]')) return this._openForm(null);
+      if (e.target.closest('[data-add]')) return this._openForm();
       if (e.target.closest('[data-cancel]')) return this._closeForm();
       if (e.target.closest('[data-save]')) return this._save();
-      const editBtn = e.target.closest('[data-edit]');
-      if (editBtn) return this._openForm(editBtn.getAttribute('data-edit'));
-      const delBtn = e.target.closest('[data-delete]');
-      if (delBtn) return this._delete(delBtn.getAttribute('data-delete'));
+      const archiveBtn = e.target.closest('[data-archive]');
+      if (archiveBtn) return this._setArchived(archiveBtn.getAttribute('data-archive'), true);
+      const restoreBtn = e.target.closest('[data-restore]');
+      if (restoreBtn) return this._setArchived(restoreBtn.getAttribute('data-restore'), false);
       if (e.target.closest('[data-nav]')) {
         this.dispatchEvent(new CustomEvent('navigate', { detail: { key: 'hub' }, bubbles: true, composed: true }));
       }
     });
     this.shadowRoot.addEventListener('input', (e) => {
+      const k = e.target && e.target.getAttribute && e.target.getAttribute('data-field');
+      if (k && this._draft) this._draft[k] = e.target.value;
+    });
+    this.shadowRoot.addEventListener('change', (e) => {
       const k = e.target && e.target.getAttribute && e.target.getAttribute('data-field');
       if (k && this._draft) this._draft[k] = e.target.value;
     });
@@ -213,23 +224,14 @@ class FleetManagement extends HTMLElement {
     this.dispatchEvent(new CustomEvent('list-assets', { detail: { term: '' }, bubbles: true, composed: true }));
   }
 
-  _openForm(id) {
+  _openForm() {
     this._msg = null;
-    if (id) {
-      const a = this._items.find((x) => x._id === id);
-      if (!a) return;
-      this._editingId = id;
-      this._draft = { ...a };
-    } else {
-      this._editingId = null;
-      this._draft = { status: 'Active' };
-    }
+    this._draft = { status: 'Active' };
     this._render();
   }
 
   _closeForm() {
     this._draft = null;
-    this._editingId = null;
     this._render();
   }
 
@@ -243,18 +245,15 @@ class FleetManagement extends HTMLElement {
     this._saving = true;
     this._msg = null;
     this._render();
-    this.dispatchEvent(new CustomEvent('save-asset', {
-      detail: { asset: { ...(this._editingId ? { _id: this._editingId } : {}), ...d } },
-      bubbles: true, composed: true,
-    }));
+    this.dispatchEvent(new CustomEvent('save-asset', { detail: { asset: { ...d } }, bubbles: true, composed: true }));
   }
 
-  _delete(id) {
-    if (this._deletingId) return;
-    this._deletingId = id;
+  _setArchived(id, archived) {
+    if (this._archivingId) return;
+    this._archivingId = id;
     this._msg = null;
     this._render();
-    this.dispatchEvent(new CustomEvent('delete-asset', { detail: { id }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('archive-asset', { detail: { id, archived }, bubbles: true, composed: true }));
   }
 
   _render() {
@@ -279,11 +278,13 @@ class FleetManagement extends HTMLElement {
 
   _formSection() {
     const d = this._draft;
-    const isEdit = !!this._editingId;
     const fieldHtml = (f) => {
       const val = esc(d[f.key] || '');
       let input;
-      if (f.type === 'select') {
+      if (f.type === 'employee-select') {
+        const opts = this._employees.map((e) => `<option value="${esc(e._id)}" ${d[f.key] === e._id ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+        input = `<select data-field="${f.key}"><option value="">— Unassigned —</option>${opts}</select>`;
+      } else if (f.type === 'select') {
         input = `<select data-field="${f.key}">${f.options.map(([v, l]) => `<option value="${v}" ${d[f.key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
       } else if (f.type === 'textarea') {
         input = `<textarea data-field="${f.key}">${val}</textarea>`;
@@ -293,11 +294,11 @@ class FleetManagement extends HTMLElement {
       return `<div class="${f.half ? '' : 'full'}"><label class="f">${f.label}</label>${input}</div>`;
     };
     return `<div class="section card" style="padding:18px 20px">
-      <h2>${isEdit ? 'Edit asset' : 'Add a vehicle or trailer'}</h2>
+      <h2>Add a vehicle or trailer</h2>
       <div class="field-grid">${FIELDS.map(fieldHtml).join('')}</div>
       <div style="display:flex;gap:10px;margin-top:18px">
         <button class="btn ${this._saving ? 'is-loading' : ''}" data-save>
-          ${this._saving ? '<span class="btn-spinner"></span>Saving…' : (isEdit ? 'Save changes' : 'Add asset')}</button>
+          ${this._saving ? '<span class="btn-spinner"></span>Saving…' : 'Add asset'}</button>
         <button class="btn ghost" data-cancel>Cancel</button>
       </div>
     </div>`;
@@ -307,7 +308,7 @@ class FleetManagement extends HTMLElement {
     return `<div class="section">
       <h2>Fleet records</h2>
       <div class="searchbar">
-        <input type="text" id="q" placeholder="Search unit #, make, model, plate, VIN…">
+        <input type="text" id="q" placeholder="Search unit #, plate, VIN, make, model, assigned to…">
         <button class="btn" data-search>Search</button>
         <button class="btn ghost" data-add>+ Add asset</button>
       </div>
@@ -322,26 +323,27 @@ class FleetManagement extends HTMLElement {
   }
 
   _assetCard(a) {
-    const name = a.unitnumber ? `Unit ${a.unitnumber}` : (a.vin || a.title || '(no unit # or VIN)');
+    // Van/unit # and plate are the two things someone's actually looking for at a glance.
+    const heading = [a.unitnumber ? `Van ${a.unitnumber}` : '', a.plateNumber ? `Plate ${a.plateNumber}` : '']
+      .filter(Boolean).join(' · ') || (a.vin || a.title || '(no unit # or plate)');
     const vehicleLine = [a.year, a.make, a.model, a.color].filter(Boolean).join(' ');
-    const meta = [vehicleLine, a.plateNumber ? `Plate ${a.plateNumber}` : '', a.vin ? `VIN ${a.vin}` : '']
+    const meta = [vehicleLine, a.vin ? `VIN ${a.vin}` : ''].filter(Boolean).map(esc).join(' · ');
+    const meta2 = [a.assignedToName ? `Assigned: ${a.assignedToName}` : '', a.ncQuickpass ? `Quickpass #${a.ncQuickpass}` : '', a.dateAdded ? `Added ${a.dateAdded}` : '']
       .filter(Boolean).map(esc).join(' · ');
-    const meta2 = [a.assignedTo ? `Assigned: ${a.assignedTo}` : '', a.ncQuickpass ? `Quickpass #${a.ncQuickpass}` : '', a.dateAdded ? `Added ${a.dateAdded}` : '']
-      .filter(Boolean).map(esc).join(' · ');
-    const deleting = this._deletingId === a._id;
+    const busy = this._archivingId === a._id;
     const retired = a.status === 'Retired';
 
-    return `<div class="asset card">
+    return `<div class="asset card ${retired ? 'is-retired' : ''}">
       <div class="top">
         <div class="info">
-          <div class="name">${esc(name)} <span class="pill ${retired ? '' : 'on'}">${esc(a.status || 'Active')}</span></div>
+          <div class="name">${esc(heading)} <span class="pill ${retired ? '' : 'on'}">${esc(a.status || 'Active')}</span></div>
           ${meta ? `<div class="meta">${meta}</div>` : ''}
           ${meta2 ? `<div class="meta">${meta2}</div>` : ''}
         </div>
         <div class="actions">
-          <button class="btn ghost sm" data-edit="${esc(a._id)}">Edit</button>
-          <button class="btn danger sm ${deleting ? 'is-loading' : ''}" data-delete="${esc(a._id)}" ${deleting ? 'disabled' : ''}>
-            ${deleting ? '…' : 'Delete'}</button>
+          ${retired
+            ? `<button class="btn ghost sm ${busy ? 'is-loading' : ''}" data-restore="${esc(a._id)}" ${busy ? 'disabled' : ''}>${busy ? '…' : 'Restore'}</button>`
+            : `<button class="btn ghost sm ${busy ? 'is-loading' : ''}" data-archive="${esc(a._id)}" ${busy ? 'disabled' : ''}>${busy ? '…' : 'Archive'}</button>`}
         </div>
       </div>
     </div>`;
