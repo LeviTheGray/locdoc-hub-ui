@@ -15,8 +15,14 @@
  *                       'delete-asset'  { id }
  *                       'navigate'      { key: 'hub' }
  *
- * Asset shape: { _id?, assetType:'vehicle'|'trailer', unitNumber, make, model, year, plateNumber,
- *                vin, titleNumber, titleState, lienholder, registrationExpiration, notes }
+ * Asset shape matches the FleetAssets collection as imported from the legacy fleet tracker (field
+ * keys below are the exact ones Wix generated on CSV import — see this file's git history for the
+ * discussion; two-word labels camelCase, "NC Quickpass #" became `ncQuickpass`):
+ *   { _id?, title, unitnumber, model, ncQuickpass, dateAdded, year, make, color, vin,
+ *     plateNumber, assignedTo, status:'Active'|'Retired' }
+ * No assetType/title-number/lienholder/registration fields — those were guessed before the real
+ * data existed and don't apply to what's actually tracked (the imported "Title" column is an
+ * internal record label/serial from the legacy system, not a legal vehicle title).
  *
  * The backend re-checks manager status on every method (backend/fleetManagement.web.js) — the
  * `canManage` flag here only decides what UI to paint.
@@ -28,18 +34,18 @@
 import { styles, ensureMaterialSymbols } from './tokens.js';
 
 const FIELDS = [
-  { key: 'unitNumber', label: 'Unit #', type: 'text', half: true },
-  { key: 'assetType', label: 'Type', type: 'select', options: [['vehicle', 'Vehicle'], ['trailer', 'Trailer']], half: true },
+  { key: 'unitnumber', label: 'Unit #', type: 'text', half: true },
+  { key: 'status', label: 'Status', type: 'select', options: [['Active', 'Active'], ['Retired', 'Retired']], half: true },
   { key: 'make', label: 'Make', type: 'text', half: true },
   { key: 'model', label: 'Model', type: 'text', half: true },
   { key: 'year', label: 'Year', type: 'text', half: true },
+  { key: 'color', label: 'Color', type: 'text', half: true },
   { key: 'plateNumber', label: 'Plate #', type: 'text', half: true },
-  { key: 'vin', label: 'VIN', type: 'text' },
-  { key: 'titleNumber', label: 'Title #', type: 'text', half: true },
-  { key: 'titleState', label: 'Title state', type: 'text', half: true },
-  { key: 'lienholder', label: 'Lienholder', type: 'text', half: true },
-  { key: 'registrationExpiration', label: 'Registration expires', type: 'date', half: true },
-  { key: 'notes', label: 'Notes', type: 'textarea' },
+  { key: 'vin', label: 'VIN', type: 'text', half: true },
+  { key: 'assignedTo', label: 'Assigned to', type: 'text', half: true },
+  { key: 'ncQuickpass', label: 'NC Quickpass #', type: 'text', half: true },
+  { key: 'dateAdded', label: 'Date added', type: 'text', half: true },
+  { key: 'title', label: 'Title / record label', type: 'text', half: true },
 ];
 
 const STYLES = styles(`
@@ -64,6 +70,7 @@ const STYLES = styles(`
   .asset .name { font-size: 15px; font-weight: 700; }
   .asset .meta { font-size: 12px; color: var(--gray-600); margin-top: 2px; }
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--gray-100); color: var(--gray-600); }
+  .pill.on { background: #e2ece0; color: var(--primary-dk); }
   .asset .actions { display: flex; gap: 8px; }
   .btn.ghost { background: var(--gray-100); color: var(--gray-900); }
   .btn.ghost:hover { background: var(--gray-200); }
@@ -215,7 +222,7 @@ class FleetManagement extends HTMLElement {
       this._draft = { ...a };
     } else {
       this._editingId = null;
-      this._draft = { assetType: 'vehicle' };
+      this._draft = { status: 'Active' };
     }
     this._render();
   }
@@ -229,7 +236,7 @@ class FleetManagement extends HTMLElement {
   _save() {
     if (this._saving || !this._draft) return;
     const d = this._draft;
-    if (!(d.unitNumber || '').trim() && !(d.vin || '').trim()) {
+    if (!(d.unitnumber || '').trim() && !(d.vin || '').trim()) {
       this._msg = { ok: false, text: 'Enter at least a unit number or VIN.' };
       return this._render();
     }
@@ -315,21 +322,21 @@ class FleetManagement extends HTMLElement {
   }
 
   _assetCard(a) {
-    const name = a.unitNumber ? `Unit ${a.unitNumber}` : (a.vin || '(no unit # or VIN)');
-    const vehicleLine = [a.year, a.make, a.model].filter(Boolean).join(' ');
+    const name = a.unitnumber ? `Unit ${a.unitnumber}` : (a.vin || a.title || '(no unit # or VIN)');
+    const vehicleLine = [a.year, a.make, a.model, a.color].filter(Boolean).join(' ');
     const meta = [vehicleLine, a.plateNumber ? `Plate ${a.plateNumber}` : '', a.vin ? `VIN ${a.vin}` : '']
       .filter(Boolean).map(esc).join(' · ');
-    const titleMeta = [a.titleNumber ? `Title #${a.titleNumber}` : '', a.titleState, a.lienholder ? `Lien: ${a.lienholder}` : '', a.registrationExpiration ? `Reg. exp. ${a.registrationExpiration}` : '']
+    const meta2 = [a.assignedTo ? `Assigned: ${a.assignedTo}` : '', a.ncQuickpass ? `Quickpass #${a.ncQuickpass}` : '', a.dateAdded ? `Added ${a.dateAdded}` : '']
       .filter(Boolean).map(esc).join(' · ');
     const deleting = this._deletingId === a._id;
+    const retired = a.status === 'Retired';
 
     return `<div class="asset card">
       <div class="top">
         <div class="info">
-          <div class="name">${esc(name)} <span class="pill">${a.assetType === 'trailer' ? 'Trailer' : 'Vehicle'}</span></div>
+          <div class="name">${esc(name)} <span class="pill ${retired ? '' : 'on'}">${esc(a.status || 'Active')}</span></div>
           ${meta ? `<div class="meta">${meta}</div>` : ''}
-          ${titleMeta ? `<div class="meta">${titleMeta}</div>` : ''}
-          ${a.notes ? `<div class="meta">${esc(a.notes)}</div>` : ''}
+          ${meta2 ? `<div class="meta">${meta2}</div>` : ''}
         </div>
         <div class="actions">
           <button class="btn ghost sm" data-edit="${esc(a._id)}">Edit</button>
