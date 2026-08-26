@@ -9,7 +9,8 @@
  * rounded to the nearest dollar for payroll.
  *
  * Two-step flow:
- *   1. Enter a period label + pool amount, click Generate → backend returns every eligible
+ *   1. Pick a period (bonuses are monthly — dropdown of last/this/next month, e.g. "August 2026",
+ *      defaulting to the current month) + enter a pool amount, click Generate → backend returns every eligible
  *      employee's raw Reliability score + per-criterion breakdown (from AssessmentScores,
  *      trailing 190 days) and Tenure years (from Employees.startDate).
  *   2. Review table, one row per employee. Reliability/Tenure are read-only (computed).
@@ -56,6 +57,17 @@ const CRITERIA_LABELS = {
   humble: 'Humble', hungry: 'Hungry', smart: 'Smart',
   helpfulKind: 'Helpful & Kind Communication', fastResponse: 'Fast Response', solvesProblems: 'Solves Problems',
 };
+
+// Bonuses are paid monthly — 3 choices (last/this/next month), labeled "August 2026" etc.,
+// defaulting to the current month. `period` is still saved as this plain label string.
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function monthOptions() {
+  const now = new Date();
+  return [-1, 0, 1].map((offset) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  });
+}
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
@@ -138,7 +150,7 @@ class BonusCalculator extends HTMLElement {
     this._generating = false;
     this._saving = false;
     this._msg = null;
-    this._period = '';
+    this._period = monthOptions()[1]; // defaults to the current month
     this._poolAmount = '';
     this._rows = null;       // null until a run is generated
     this._openInfo = null;   // index of the row whose detail panel is expanded
@@ -192,7 +204,7 @@ class BonusCalculator extends HTMLElement {
     if (p.ok) {
       this._msg = { ok: true, text: `Saved ${this._rows.length} payout${this._rows.length === 1 ? '' : 's'} for ${this._period || 'this run'}.` };
       this._rows = null;
-      this._period = '';
+      this._period = monthOptions()[1];
       this._poolAmount = '';
       this._loadHistory();
     } else {
@@ -242,6 +254,9 @@ class BonusCalculator extends HTMLElement {
         this._rows[i].profitabilityScore = e.target.value;
         this._renderTable();
       }
+    });
+    this.shadowRoot.addEventListener('change', (e) => {
+      if (e.target.getAttribute && e.target.getAttribute('data-field') === 'period') this._period = e.target.value;
     });
     this.shadowRoot.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target && e.target.id === 'hq') { e.preventDefault(); this._searchHistory(); }
@@ -354,11 +369,12 @@ class BonusCalculator extends HTMLElement {
   }
 
   _startSection() {
+    const opts = monthOptions().map((m) => `<option value="${esc(m)}" ${this._period === m ? 'selected' : ''}>${esc(m)}</option>`).join('');
     return `<div class="section card" style="padding:18px 20px">
       <h2>Start a bonus run</h2>
       <div class="row2">
-        <div><label class="f">Period <span style="font-weight:400;color:var(--gray-400)">(e.g. "Q3 2026")</span></label>
-          <input type="text" data-field="period" value="${esc(this._period)}"></div>
+        <div><label class="f">Period</label>
+          <select data-field="period">${opts}</select></div>
         <div><label class="f">Bonus Pool</label>
           <input type="number" step="0.01" data-field="poolAmount" placeholder="0.00" value="${esc(this._poolAmount)}"></div>
       </div>
