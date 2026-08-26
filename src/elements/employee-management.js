@@ -8,12 +8,14 @@
  *     (employee-lifecycle.js). Shown if `canOnboard` (backend/lifecycleAuth.js allowlist).
  *   • Fleet Management  — shown if `isManager`. Active — links to /fleet-management
  *     (fleet-management.js, backend/fleetManagement.web.js).
- *   • Bonus Payout Calculator — shown if `isOperations`. Not built yet — disabled/"Coming soon".
+ *   • Bonus Payout Calculator — shown if `canBonus` (backend/bonusCalculator.web.js's
+ *     canManageBonus() — Operations, Employees.department 'CSuite', or levi@locdoc.net). Active —
+ *     links to /bonus-calculator (bonus-calculator.js).
  * New tools get added here the same way — one more entry in TOOLS, its own visibility rule.
  *
  * Data handoff:
- *   • Velo → element :  init-data { currentUser, canOnboard, isManager, isOperations } | { error }
- *   • element → Velo :  'navigate' { detail: { key: 'onboarding' | 'fleet' | 'hub' } }
+ *   • Velo → element :  init-data { currentUser, canOnboard, isManager, canBonus } | { error }
+ *   • element → Velo :  'navigate' { detail: { key: 'onboarding' | 'fleet' | 'bonus' | 'hub' } }
  *
  * Editor: Add → Embed Code → Custom Element → source = this file,
  * tag name `employee-management`, element ID `employeeManagement`.
@@ -32,7 +34,7 @@ const TOOLS = [
     active: true, visible: (a) => a.isManager },
   { key: 'bonus', icon: 'payments', name: 'Bonus Payout Calculator',
     desc: 'Enter the inputs for a payout and calculate what each person is owed.',
-    active: false, visible: (a) => a.isOperations },
+    active: true, visible: (a) => a.canBonus },
 ];
 
 const STYLES = `
@@ -80,7 +82,7 @@ class EmployeeManagement extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._user = null;
-    this._access = { canOnboard: false, isManager: false, isOperations: false };
+    this._access = { canOnboard: false, isManager: false, canBonus: false };
     this._error = null;
     this._navigating = false;
   }
@@ -131,7 +133,7 @@ class EmployeeManagement extends HTMLElement {
     try { p = JSON.parse(json); } catch (e) { p = { error: 'Failed to load.' }; }
     if (p.error) { this._$('[data-loading]').innerHTML = `<span style="color:#b91c1c">${p.error}</span>`; return; }
     this._user = p.currentUser || null;
-    this._access = { canOnboard: !!p.canOnboard, isManager: !!p.isManager, isOperations: !!p.isOperations };
+    this._access = { canOnboard: !!p.canOnboard, isManager: !!p.isManager, canBonus: !!p.canBonus };
     this._render();
   }
 
