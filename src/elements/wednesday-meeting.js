@@ -10,6 +10,9 @@
  *                           lives inside this tab.
  *   3. Driver Scorecard   — ranked tiles (vehicle #, name, color-scaled score) plus
  *                           a rule-averages panel, mirroring the cleanliness ranked list.
+ *   3b. Credit Card       — company + per-department receipt-upload %, ported from the
+ *                           standalone credit-card-report.js element (same read-only,
+ *                           department-level-only view — no individual names/scores).
  *   4. Core Values        — 2 values picked at random (seeded by the meeting week, so
  *                           the pick is stable all week) with a discussion prompt.
  *   5. Tech Spotlight     — one tech/week: Problem + Solution on top, then photos
@@ -30,8 +33,7 @@ import { CORE_VALUES, CORE_VALUES_CSS, valueCardHTML } from './core-values-data.
 
 // Top-level tabs. 'reports' and 'culture' are GROUPS (below) — each renders a sub-nav of its
 // own instead of taking a top-level slot, so the bar stays short as more reports/culture
-// moments get added (e.g. Credit Card is coming as a "reports" sub-tab once it's proven out
-// standalone) without ever needing horizontal scroll or shrinking tabs to fit.
+// moments get added without ever needing horizontal scroll or shrinking tabs to fit.
 const TABS = [
   { key: 'upcoming',   label: 'Upcoming Meeting', icon: '📅' },
   { key: 'culture',    label: 'Team Culture',     icon: '🎉' },
@@ -44,6 +46,7 @@ const GROUPS = {
   reports: [
     { key: 'cleanliness', label: 'Cleanliness',      icon: '🧹' },
     { key: 'drivers',     label: 'Driver Scorecard', icon: '🚐' },
+    { key: 'creditcard',  label: 'Credit Card',      icon: '💳' },
   ],
   culture: [
     { key: 'positive',   label: 'One Positive Thing', icon: '🌟' },
@@ -129,6 +132,16 @@ const SAMPLE_DATA = {
   driversMeta: {
     fleetScore: 87.2, dateRange: 'Jun 14 – Jun 20',
     ruleAverages: { hardAccel: 97.59, harshBrake: 99.68, harshCorner: 96.63, seatbelt: 95.99, speeding: 46.03, distracted: 99.04 },
+  },
+  // Department-level only — no individual names/scores, matching the standalone report's rule.
+  creditCard: {
+    companyPercentage: 91.4, companyPurchases: 312, companyReceipts: 285, departmentCount: 4,
+    departments: [
+      { department: 'North',      totalPurchases: 96, receiptsUploaded: 93, employeeCount: 6, percentage: 96.9 },
+      { department: 'South',      totalPurchases: 88, receiptsUploaded: 81, employeeCount: 5, percentage: 92.0 },
+      { department: 'West',       totalPurchases: 74, receiptsUploaded: 65, employeeCount: 4, percentage: 87.8 },
+      { department: 'Operations', totalPurchases: 54, receiptsUploaded: 46, employeeCount: 3, percentage: 85.2 },
+    ],
   },
   spotlight: [
     { tech: 'Marcus Bell', title: 'Seized deadbolt on a historic mortise lock',
@@ -315,6 +328,26 @@ const STYLES = `
   .drv-parked-row:last-child { border-bottom:none; }
   .drv-parked-row .drv-tile-veh-icon { position:static; opacity:.55; }
   .drv-parked-reason { margin-left:auto; font-size:11px; font-weight:700; color:var(--gray-500); background:var(--gray-100); border-radius:100px; padding:3px 10px; }
+
+  /* Credit Card tab — company tile in the same "fleet score" language as Driver Scorecard,
+     then a department grid. Department-level only by design (no individual names/scores). */
+  .cc-top { display:flex; align-items:stretch; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .cc-company { background:#e2ece0; border:1.5px solid var(--primary-lt); border-radius:var(--radius); padding:16px 30px; text-align:center; min-width:190px; display:flex; flex-direction:column; justify-content:center; }
+  .cc-company .v { font-size:calc(54px * var(--fs)); font-weight:900; line-height:1; color:var(--primary-dk); }
+  .cc-company .l { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-600); margin-top:6px; font-weight:700; }
+  .cc-stats-row { display:flex; gap:10px; flex-wrap:wrap; flex:1; }
+  .cc-stat { border-radius:10px; padding:10px 14px; color:#1f2937; flex:1; min-width:118px; background:var(--gray-100); display:flex; flex-direction:column; justify-content:center; }
+  .cc-stat .l { font-size:12px; font-weight:600; opacity:.85; }
+  .cc-stat .v { font-size:calc(20px * var(--fs)); font-weight:900; }
+  .cc-dept-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:14px; }
+  .cc-dept-card { background:#fff; border:1.5px solid var(--gray-200); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; }
+  .cc-dept-head { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .cc-dept-name { font-size:calc(14px * var(--fs)); font-weight:700; }
+  .cc-pill { font-size:11px; font-weight:700; border-radius:100px; padding:3px 10px; margin-left:auto; white-space:nowrap; }
+  .cc-pill.ok { background:#dcfce7; color:#14532d; } .cc-pill.warn { background:#fef9c3; color:#78350f; } .cc-pill.bad { background:#fee2e2; color:#991b1b; }
+  .cc-track { height:10px; background:var(--gray-100); border-radius:100px; overflow:hidden; margin-bottom:10px; }
+  .cc-fill { height:100%; border-radius:100px; }
+  .cc-dept-meta { font-size:12px; color:var(--gray-500); }
 
   /* Core Values tab — reuses the mosaic tile styling from core-values-data.js, 2-up.
      The shared tiles are sized for an 8-up wall page; bump text up for meeting-room readability,
@@ -660,6 +693,7 @@ class WednesdayMeeting extends HTMLElement {
     const SUB_PANELS = {
       cleanliness: () => this._cleanlinessPanel(),
       drivers: () => this._driversPanel(),
+      creditcard: () => this._creditCardPanel(),
       corevalues: () => this._coreValuesPanel(),
       positive: () => this._positivePanel(),
     };
@@ -861,6 +895,40 @@ class WednesdayMeeting extends HTMLElement {
         <div class="drv-legend"><span>0</span><i style="background:#ef4444"></i><i style="background:#fb923c"></i><i style="background:#facc15"></i><i style="background:#4ade80"></i><i style="background:#16a34a"></i><span>100</span></div>
       </div>
       ${parkedHtml}`;
+  }
+
+  // ---- Tab 3b: Credit Card (ported from the standalone credit-card-report.js element) ----
+  // Department-level only by design — no individual names/purchases/receipts anywhere, matching
+  // the standalone report's privacy rule. Percentages arrive pre-aggregated from page Velo.
+  _creditCardPanel() {
+    const cc = this._data.creditCard;
+    if (!cc || !Array.isArray(cc.departments) || !cc.departments.length) {
+      return `<div class="placeholder">💳 The credit card report loads here once the page Velo feeds
+          <b>{ creditCard: { companyPercentage, departments } }</b>.</div>`;
+    }
+    const pct = (v) => (v == null ? '—' : `${v}%`);
+    const pillCls = (v) => (v == null ? '' : v >= 90 ? 'ok' : v >= 70 ? 'warn' : 'bad');
+    const stats = [
+      { v: cc.companyPurchases, l: 'Total Purchases' },
+      { v: cc.companyReceipts, l: 'Receipts Uploaded' },
+      { v: cc.departmentCount ?? cc.departments.length, l: 'Departments' },
+    ];
+    const deptCards = cc.departments.map(d => `
+      <div class="cc-dept-card">
+        <div class="cc-dept-head">
+          <div class="cc-dept-name">${esc(d.department)}</div>
+          <div class="cc-pill ${pillCls(d.percentage)}">${pct(d.percentage)}</div>
+        </div>
+        <div class="cc-track"><div class="cc-fill" style="width:${d.percentage ?? 0}%;background:${clScoreColor(d.percentage ?? 0)}"></div></div>
+        <div class="cc-dept-meta">${d.receiptsUploaded} of ${d.totalPurchases} purchases · ${d.employeeCount} ${d.employeeCount === 1 ? 'person' : 'people'}</div>
+      </div>`).join('');
+    return `
+      <div class="panel-sub">Receipt uploads as a share of total purchases, over the current rolling 4-week window.</div>
+      <div class="cc-top">
+        <div class="cc-company"><div class="v">${pct(cc.companyPercentage)}</div><div class="l">Company Receipt %</div></div>
+        <div class="cc-stats-row">${stats.map(s => `<div class="cc-stat"><div class="v">${esc(String(s.v))}</div><div class="l">${s.l}</div></div>`).join('')}</div>
+      </div>
+      <div class="cc-dept-grid">${deptCards}</div>`;
   }
 
   // ---- Tab 4: Core Values (2 random-per-week, with a discussion prompt; "See all" for
