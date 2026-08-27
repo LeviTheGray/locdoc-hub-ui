@@ -24,17 +24,21 @@
  *      Employees.startDate) — refuses with an error if no pool exists for the period yet.
  *   2. Review table, one row per employee. Reliability/Tenure are read-only (computed).
  *      Profitability isn't a solved formula yet — the old app defaulted it to a flat 3 — so it's
- *      an editable number here, defaulting to 3, VISIBLY a placeholder rather than a hidden
- *      constant; editing it live-recomputes every row's shares and suggested bonus. An ⓘ button
- *      per row expands the full breakdown (per-criterion assessment scores, tenure detail) so a
- *      low score is explainable, not a mystery.
+ *      editable here, defaulting to 3, VISIBLY a placeholder rather than a hidden constant;
+ *      changing it live-recomputes every row's shares and suggested bonus. Fixed 3-point scale
+ *      (2=missed/3=hit/4=exceeded target) rendered as a 3-button toggle, not a number input —
+ *      there's no in-between value, so free-typing one was both wrong and (a real bug found
+ *      2026-08-27) broken: with no starting value and min="2", the spinner arrows always computed
+ *      from empty and landed on 2 regardless of which arrow was clicked. An ⓘ button per row
+ *      expands the full breakdown (per-criterion assessment scores, tenure detail) so a low score
+ *      is explainable, not a mystery.
  *
  *      Profitability is TEAM-based (per Levi, 2026-08-27 — "did this team hit its target?"):
- *      rows are grouped by Employees.department, each group gets one header-row Profitability
- *      input that sets every member of that team at once (2=missed/3=hit/4=exceeded). A
- *      per-employee override input still sits on each row underneath for the rare case a single
- *      person needs to differ from their team — editing a person's own field doesn't touch their
- *      teammates, only the team-level field mass-applies.
+ *      rows are grouped by Employees.department, each group gets one header-row toggle that sets
+ *      every member of that team at once. A per-employee toggle still sits on each row underneath
+ *      for the rare case a single person needs to differ from their team — using a person's own
+ *      toggle doesn't touch their teammates, only the team-level one mass-applies (and shows no
+ *      button selected once members have diverged, since there's no single value to represent).
  *
  *      Audit, not data entry (per Chris, the C-Suite reviewer, via Levi 2026-08-26): each row gets
  *      marked ✓ Confirm (pay the suggested amount) or ✗ Exclude (pay $0 — terminated, not yet
@@ -75,6 +79,17 @@ import { styles, ensureMaterialSymbols } from './tokens.js';
 
 const SPLIT = { reliability: 0.5, profitability: 0.35, tenure: 0.15 };
 const DEFAULT_PROFITABILITY = 3;
+// Fixed 3-point scale, not a free number — 2=missed target, 3=hit (default), 4=exceeded.
+const PROFIT_SCALE = [
+  { value: 2, label: '2', title: 'Missed target' },
+  { value: 3, label: '3', title: 'Hit target' },
+  { value: 4, label: '4', title: 'Exceeded target' },
+];
+function profitToggle({ selected, dataAttr, dataValuePrefix, disabled }) {
+  return `<div class="profit-toggle${dataAttr === 'data-team-profit' ? ' team' : ''}">${PROFIT_SCALE.map((o) =>
+    `<button type="button" title="${esc(o.title)}" ${dataAttr}="${esc(dataValuePrefix)}:${o.value}" class="${selected === o.value ? 'sel' : ''}" ${disabled ? 'disabled' : ''}>${o.label}</button>`
+  ).join('')}</div>`;
+}
 const CRITERIA_LABELS = {
   humble: 'Humble', hungry: 'Hungry', smart: 'Smart',
   helpfulKind: 'Helpful & Kind Communication', fastResponse: 'Fast Response', solvesProblems: 'Solves Problems',
@@ -123,8 +138,14 @@ const STYLES = styles(`
   table.bonus-tbl tr.team-row td { background: var(--gray-50); border-bottom: 1.5px solid var(--gray-200); padding: 10px; }
   table.bonus-tbl tr.team-row .team-name { font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--gray-600); }
   table.bonus-tbl tr.team-row .team-field { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--gray-500); }
-  table.bonus-tbl tr.team-row input[type=number] { width: 60px; }
   table.bonus-tbl input[type=number] { width: 70px; padding: 6px 8px; font-size: 13px; }
+  .profit-toggle { display: inline-flex; border: 1.5px solid var(--gray-200); border-radius: 8px; overflow: hidden; }
+  .profit-toggle button { border: none; background: #fff; padding: 5px 10px; font-size: 12px; font-weight: 700; color: var(--gray-500); cursor: pointer; border-right: 1px solid var(--gray-200); }
+  .profit-toggle button:last-child { border-right: none; }
+  .profit-toggle button:hover { background: var(--gray-50); }
+  .profit-toggle button.sel { background: var(--primary); color: #fff; }
+  .profit-toggle button:disabled { cursor: default; opacity: .5; }
+  .profit-toggle.team button { padding: 6px 12px; font-size: 13px; }
   table.bonus-tbl .name-cell { display: flex; align-items: center; gap: 6px; }
   table.bonus-tbl .name { font-weight: 700; }
   table.bonus-tbl .flag { font-size: 10px; font-weight: 700; color: #b91c1c; display: block; }
@@ -301,6 +322,24 @@ class BonusCalculator extends HTMLElement {
       if (confirmBtn) return this._setStatus(Number(confirmBtn.getAttribute('data-confirm')), 'confirmed');
       const excludeBtn = e.target.closest('[data-exclude]');
       if (excludeBtn) return this._setStatus(Number(excludeBtn.getAttribute('data-exclude')), 'excluded');
+      // Profitability is a fixed 3-point scale (2=missed/3=hit/4=exceeded target), not a free-
+      // number field — a toggle group, not a number input (which had a real bug: with no starting
+      // value and min="2", the up/down spinner always computed from empty and landed on the floor
+      // no matter which arrow you clicked).
+      const rowProfit = e.target.closest('[data-row-profit]');
+      if (rowProfit && this._rows) {
+        const [i, value] = rowProfit.getAttribute('data-row-profit').split(':');
+        this._rows[Number(i)].profitabilityScore = Number(value);
+        return this._renderTable();
+      }
+      const teamProfit = e.target.closest('[data-team-profit]');
+      if (teamProfit && this._rows) {
+        const sep = teamProfit.getAttribute('data-team-profit').lastIndexOf(':');
+        const team = teamProfit.getAttribute('data-team-profit').slice(0, sep);
+        const value = Number(teamProfit.getAttribute('data-team-profit').slice(sep + 1));
+        this._rows.forEach((r) => { if (((r.department || '').trim() || 'No Team') === team) r.profitabilityScore = value; });
+        return this._renderTable();
+      }
       if (e.target.closest('[data-nav]')) {
         this.dispatchEvent(new CustomEvent('navigate', { detail: { key: 'hub' }, bubbles: true, composed: true }));
       }
@@ -308,19 +347,6 @@ class BonusCalculator extends HTMLElement {
     this.shadowRoot.addEventListener('input', (e) => {
       const field = e.target.getAttribute && e.target.getAttribute('data-field');
       if (field === 'poolInput') this._poolInput = e.target.value;
-      const rowField = e.target.getAttribute && e.target.getAttribute('data-row-field');
-      if (rowField === 'profitabilityScore' && this._rows) {
-        const i = Number(e.target.getAttribute('data-row-index'));
-        this._rows[i].profitabilityScore = e.target.value;
-        this._renderTable();
-      }
-      const teamField = e.target.getAttribute && e.target.getAttribute('data-team-field');
-      if (teamField === 'profitabilityScore' && this._rows) {
-        const team = e.target.getAttribute('data-team');
-        const value = e.target.value;
-        this._rows.forEach((r) => { if ((r.department || '').trim() === team) r.profitabilityScore = value; });
-        this._renderTable();
-      }
     });
     this.shadowRoot.addEventListener('change', (e) => {
       if (e.target.getAttribute && e.target.getAttribute('data-field') === 'period') this._onPeriodChange(e.target.value);
@@ -507,29 +533,13 @@ class BonusCalculator extends HTMLElement {
     </div>`;
   }
 
-  // Rebuilds the whole table (every share/suggested-bonus cell can change from one edit), but a
-  // naive innerHTML replace would steal focus out from under whichever input the person is
-  // actively typing in — so remember which field was focused and restore focus + cursor after.
+  // Rebuilds the whole table (every share/suggested-bonus cell can change from one edit). Used to
+  // also restore focus/cursor into a Profitability text input mid-edit; that field is a click
+  // toggle now (no typing, nothing to steal focus from), so this is just a plain re-render.
   _renderTable() {
     const holder = this._$('tableHolder');
     if (!holder) return;
-    const active = this.shadowRoot.activeElement;
-    const focusField = active && active.getAttribute && active.getAttribute('data-row-field');
-    const focusIndex = active && active.getAttribute && active.getAttribute('data-row-index');
-    const selStart = active && active.selectionStart;
-    const selEnd = active && active.selectionEnd;
-
     holder.innerHTML = this._tableHtml();
-
-    if (focusField != null && focusIndex != null) {
-      const next = holder.querySelector(`[data-row-field="${focusField}"][data-row-index="${focusIndex}"]`);
-      if (next) {
-        next.focus();
-        if (typeof selStart === 'number' && next.setSelectionRange) {
-          try { next.setSelectionRange(selStart, selEnd); } catch (e) { /* type=number inputs don't support range selection in some browsers */ }
-        }
-      }
-    }
     const reviewCard = this._$('reviewCard');
     if (reviewCard) {
       const total = (this._rows || []).length;
@@ -584,9 +594,14 @@ class BonusCalculator extends HTMLElement {
 
     const rows = teamNames.map((team) => {
       const members = groups.get(team);
+      // The team toggle only shows a value "selected" when every member currently shares one —
+      // otherwise (after individual overrides diverge) it shows none selected, since there's no
+      // single team-wide value to represent.
+      const memberScores = new Set(members.map((r) => Number(r.profitabilityScore)));
+      const teamSelected = memberScores.size === 1 ? Array.from(memberScores)[0] : null;
       const teamHeader = `<tr class="team-row"><td colspan="2" class="team-name">${esc(team)}</td>
         <td><div class="team-field">Team Profitability
-          <input type="number" step="0.1" min="2" max="4" data-team-field="profitabilityScore" data-team="${esc(team)}" placeholder="3">
+          ${profitToggle({ selected: teamSelected, dataAttr: 'data-team-profit', dataValuePrefix: team })}
         </div></td>
         <td colspan="3"></td>
       </tr>`;
@@ -599,7 +614,7 @@ class BonusCalculator extends HTMLElement {
             <span class="name">${esc(r.employeeName)}</span>
           </div></td>
           <td>${r.reliabilityScore.toFixed(2)}${!r.hasAssessmentData ? '<span class="flag">no recent assessments</span>' : ''}<div class="share">${pct(r.reliabilityShare)} share</div></td>
-          <td><input type="number" step="0.1" data-row-field="profitabilityScore" data-row-index="${i}" value="${esc(r.profitabilityScore)}" ${excluded ? 'disabled' : ''}><div class="share">${pct(r.profitabilityShare)} share</div></td>
+          <td>${profitToggle({ selected: Number(r.profitabilityScore), dataAttr: 'data-row-profit', dataValuePrefix: i, disabled: excluded })}<div class="share">${pct(r.profitabilityShare)} share</div></td>
           <td>${r.tenureYears.toFixed(2)}${!r.hasStartDate ? '<span class="flag">no start date</span>' : ''}<div class="share">${pct(r.tenureShare)} share</div></td>
           <td class="suggested">${money(r.suggestedBonus)}</td>
           <td><div class="review-actions">
