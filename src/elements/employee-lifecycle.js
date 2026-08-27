@@ -58,12 +58,13 @@ const RESOURCE_STEPS = [
   { key: 'googleWorkspace', label: 'Google Workspace user', manual: false, offboardable: true },
   { key: 'omsContact', label: 'OMS contact', manual: false, offboardable: true },
   { key: 'omsTechnician', label: 'OMS technician', manual: false, offboardable: false },
-  { key: 'vanAssignment', label: 'Van link', manual: false, offboardable: false, requires: (e) => !!e.vehicleNumber },
-  { key: 'vcfCard', label: 'vCard emailed to team', manual: false, offboardable: false },
+  { key: 'vcfCard', label: 'vCard emailed to team', offboardLabel: 'Removal email sent to team', manual: true, offboardable: true },
 ];
 const STANDALONE_OFFBOARD_STEPS = [
   { key: 'dataExportConfirmed', label: 'Data export confirmed', manual: true },
 ];
+// NOT a lifecycle step — just Employees.vehicleNumber, shown read-only here for visibility
+// (edited via the Edit form's Van # field, not via any step action).
 
 // Mirrors backend/employeeLifecycle.web.js's EDITABLE_FIELDS.
 const EDIT_FIELDS = [
@@ -482,8 +483,18 @@ class EmployeeLifecycle extends HTMLElement {
         </div>
       </div>
       ${editing ? this._editForm(e) : ''}
-      <div class="steps">${stepList.map((s) => this._stepRow(e, s, active)).join('')}</div>
+      <div class="steps">${this._vehicleRow(e)}${stepList.map((s) => this._stepRow(e, s, active)).join('')}</div>
     </div>`;
+  }
+
+  // Not a lifecycle step — just Employees.vehicleNumber, read-only here (edited via the Edit
+  // form's Van # field).
+  _vehicleRow(e) {
+    const val = (e.vehicleNumber || '').trim();
+    const control = val
+      ? `<span class="record-id" data-copy-id="${esc(val)}" title="Click to copy">${esc(val)}</span>`
+      : `<span class="step-chip na">Not set</span>`;
+    return this._rowShell('Vehicle Number', '', control);
   }
 
   _editForm(e) {
@@ -522,12 +533,18 @@ class EmployeeLifecycle extends HTMLElement {
     }
 
     if (step.manual) {
-      const status = st.status || 'pending';
+      // Dual-phase manual step (vcfCard): onboarding and offboarding are two DIFFERENT
+      // confirmations on the same key — read/write the direction-specific fields, and swap in
+      // offboardLabel once archived, since it really is a different action ("send the vCard" vs
+      // "tell the team to remove them").
+      const isDualPhase = step.offboardable !== undefined;
+      const label = isDualPhase && !active && step.offboardLabel ? step.offboardLabel : step.label;
+      const done = isDualPhase ? !!(active ? st.confirmedAt : st.offboardConfirmedAt) : st.status === 'done';
       const control = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-        <input type="checkbox" data-manual="${esc(step.key)}" data-emp="${esc(e._id)}" ${status === 'done' ? 'checked' : ''}>
-        <span class="step-chip ${status}">${status === 'done' ? 'Confirmed' : 'Not yet'}</span>
+        <input type="checkbox" data-manual="${esc(step.key)}" data-emp="${esc(e._id)}" ${done ? 'checked' : ''}>
+        <span class="step-chip ${done ? 'done' : 'pending'}">${done ? 'Confirmed' : 'Not yet'}</span>
       </label>`;
-      return this._rowShell(step.label, '', control);
+      return this._rowShell(label, '', control);
     }
 
     // ---- Resource step ----
