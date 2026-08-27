@@ -29,6 +29,13 @@
  *      per row expands the full breakdown (per-criterion assessment scores, tenure detail) so a
  *      low score is explainable, not a mystery.
  *
+ *      Profitability is TEAM-based (per Levi, 2026-08-27 — "did this team hit its target?"):
+ *      rows are grouped by Employees.department, each group gets one header-row Profitability
+ *      input that sets every member of that team at once (2=missed/3=hit/4=exceeded). A
+ *      per-employee override input still sits on each row underneath for the rare case a single
+ *      person needs to differ from their team — editing a person's own field doesn't touch their
+ *      teammates, only the team-level field mass-applies.
+ *
  *      Audit, not data entry (per Chris, the C-Suite reviewer, via Levi 2026-08-26): each row gets
  *      marked ✓ Confirm (pay the suggested amount) or ✗ Exclude (pay $0 — terminated, not yet
  *      eligible, etc.). Excluding someone removes them from every dimension's sum, so every other
@@ -51,8 +58,8 @@
  *
  * Pool: { period, poolAmount, setByName, setDate }.
  *
- * RawRow: { employeeId, employeeName, reliabilityScore, hasAssessmentData, reliabilityBreakdown,
- * assessmentCount, tenureYears, hasStartDate, startDate }.
+ * RawRow: { employeeId, employeeName, department, reliabilityScore, hasAssessmentData,
+ * reliabilityBreakdown, assessmentCount, tenureYears, hasStartDate, startDate }.
  * FinalRow (what gets saved): RawRow's employeeId/employeeName/reliabilityScore/tenureYears plus
  * reliabilityShare, profitabilityScore, profitabilityShare, tenureShare, suggestedBonus,
  * status:'confirmed'|'excluded'.
@@ -113,6 +120,10 @@ const STYLES = styles(`
   table.bonus-tbl th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--gray-400); padding: 8px 10px; border-bottom: 2px solid var(--gray-200); white-space: nowrap; }
   table.bonus-tbl td { padding: 8px 10px; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
   table.bonus-tbl tr.excluded td { opacity: .45; }
+  table.bonus-tbl tr.team-row td { background: var(--gray-50); border-bottom: 1.5px solid var(--gray-200); padding: 10px; }
+  table.bonus-tbl tr.team-row .team-name { font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--gray-600); }
+  table.bonus-tbl tr.team-row .team-field { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--gray-500); }
+  table.bonus-tbl tr.team-row input[type=number] { width: 60px; }
   table.bonus-tbl input[type=number] { width: 70px; padding: 6px 8px; font-size: 13px; }
   table.bonus-tbl .name-cell { display: flex; align-items: center; gap: 6px; }
   table.bonus-tbl .name { font-weight: 700; }
@@ -301,6 +312,13 @@ class BonusCalculator extends HTMLElement {
       if (rowField === 'profitabilityScore' && this._rows) {
         const i = Number(e.target.getAttribute('data-row-index'));
         this._rows[i].profitabilityScore = e.target.value;
+        this._renderTable();
+      }
+      const teamField = e.target.getAttribute && e.target.getAttribute('data-team-field');
+      if (teamField === 'profitabilityScore' && this._rows) {
+        const team = e.target.getAttribute('data-team');
+        const value = e.target.value;
+        this._rows.forEach((r) => { if ((r.department || '').trim() === team) r.profitabilityScore = value; });
         this._renderTable();
       }
     });
@@ -552,23 +570,46 @@ class BonusCalculator extends HTMLElement {
 
     if (!computed.length) return breakdown + `<p class="empty">No eligible employees found.</p>`;
 
-    const rows = computed.map((r, i) => {
-      const excluded = r.status === 'excluded';
-      const row = `<tr class="${excluded ? 'excluded' : ''}">
-        <td><div class="name-cell">
-          <button type="button" class="info-btn ${this._openInfo === i ? 'open' : ''}" data-info="${i}" aria-label="Score breakdown">i</button>
-          <span class="name">${esc(r.employeeName)}</span>
+    // Group by team (Employees.department) for the team-level Profitability control, keeping each
+    // row's original index (into this._rows) so the row's own inputs/buttons still address the
+    // right record after grouping reorders the display.
+    const withIndex = computed.map((r, i) => ({ ...r, _i: i }));
+    const groups = new Map();
+    withIndex.forEach((r) => {
+      const team = (r.department || '').trim() || 'No Team';
+      if (!groups.has(team)) groups.set(team, []);
+      groups.get(team).push(r);
+    });
+    const teamNames = Array.from(groups.keys()).sort((a, b) => a === 'No Team' ? 1 : b === 'No Team' ? -1 : a.localeCompare(b));
+
+    const rows = teamNames.map((team) => {
+      const members = groups.get(team);
+      const teamHeader = `<tr class="team-row"><td colspan="2" class="team-name">${esc(team)}</td>
+        <td><div class="team-field">Team Profitability
+          <input type="number" step="0.1" min="2" max="4" data-team-field="profitabilityScore" data-team="${esc(team)}" placeholder="3">
         </div></td>
-        <td>${r.reliabilityScore.toFixed(2)}${!r.hasAssessmentData ? '<span class="flag">no recent assessments</span>' : ''}<div class="share">${pct(r.reliabilityShare)} share</div></td>
-        <td><input type="number" step="0.1" data-row-field="profitabilityScore" data-row-index="${i}" value="${esc(r.profitabilityScore)}" ${excluded ? 'disabled' : ''}><div class="share">${pct(r.profitabilityShare)} share</div></td>
-        <td>${r.tenureYears.toFixed(2)}${!r.hasStartDate ? '<span class="flag">no start date</span>' : ''}<div class="share">${pct(r.tenureShare)} share</div></td>
-        <td class="suggested">${money(r.suggestedBonus)}</td>
-        <td><div class="review-actions">
-          <button type="button" class="review-btn confirm ${r.status === 'confirmed' ? 'sel' : ''}" data-confirm="${i}" title="Confirm">✓</button>
-          <button type="button" class="review-btn exclude ${excluded ? 'sel' : ''}" data-exclude="${i}" title="Exclude">✗</button>
-        </div></td>
+        <td colspan="3"></td>
       </tr>`;
-      return this._openInfo === i ? row + this._detailRow(r, i) : row;
+      const memberRows = members.map((r) => {
+        const i = r._i;
+        const excluded = r.status === 'excluded';
+        const row = `<tr class="${excluded ? 'excluded' : ''}">
+          <td><div class="name-cell">
+            <button type="button" class="info-btn ${this._openInfo === i ? 'open' : ''}" data-info="${i}" aria-label="Score breakdown">i</button>
+            <span class="name">${esc(r.employeeName)}</span>
+          </div></td>
+          <td>${r.reliabilityScore.toFixed(2)}${!r.hasAssessmentData ? '<span class="flag">no recent assessments</span>' : ''}<div class="share">${pct(r.reliabilityShare)} share</div></td>
+          <td><input type="number" step="0.1" data-row-field="profitabilityScore" data-row-index="${i}" value="${esc(r.profitabilityScore)}" ${excluded ? 'disabled' : ''}><div class="share">${pct(r.profitabilityShare)} share</div></td>
+          <td>${r.tenureYears.toFixed(2)}${!r.hasStartDate ? '<span class="flag">no start date</span>' : ''}<div class="share">${pct(r.tenureShare)} share</div></td>
+          <td class="suggested">${money(r.suggestedBonus)}</td>
+          <td><div class="review-actions">
+            <button type="button" class="review-btn confirm ${r.status === 'confirmed' ? 'sel' : ''}" data-confirm="${i}" title="Confirm">✓</button>
+            <button type="button" class="review-btn exclude ${excluded ? 'sel' : ''}" data-exclude="${i}" title="Exclude">✗</button>
+          </div></td>
+        </tr>`;
+        return this._openInfo === i ? row + this._detailRow(r, i) : row;
+      }).join('');
+      return teamHeader + memberRows;
     }).join('');
 
     return breakdown + `<div class="tbl-wrap"><table class="bonus-tbl">
