@@ -4,7 +4,7 @@
  * A grouping page for admin/HR-adjacent tools that don't fit the regular member/manager
  * tool grid on Hub Home — reached via its own "Employee Management" tile there. Each tool
  * has its own access rule and is shown/hidden independently, not gated by one blanket check:
- *   • Onboarding & Offboarding — active, links to the existing /onboarding page
+ *   • Onboarding & Offboarding — active, links to the existing /employee-lifecycle page
  *     (employee-lifecycle.js). Shown if `canOnboard` (backend/lifecycleAuth.js allowlist).
  *   • Fleet Management  — shown if `isManager`. Active — links to /fleet-management
  *     (fleet-management.js, backend/fleetManagement.web.js).
