@@ -26,7 +26,7 @@
  * Data handoff (mirrors tech-spotlight-submit):
  *   • Velo → element :  init-data      { admin } | { error }
  *                       search-result  { items:[{ _id, firstName, lastName, email, title, manager,
- *                                        department, vehicleNumber, isOwnership, bonusOptOut,
+ *                                        department, vehicleNumber, bonusOptOut,
  *                                        startDate, active,
  *                                        steps:{[key]:{status,at,error?,recordId?,recordSetAt?,
  *                                          recordSetBy?,archivedAt?,archivedBy?}} }] } | { error }
@@ -75,8 +75,11 @@ const EDIT_FIELDS = [
   { key: 'manager', label: 'Manager / department scope', type: 'text', half: true },
   { key: 'department', label: 'Department', type: 'text', half: true },
   { key: 'vehicleNumber', label: 'Van #', type: 'text', half: true },
-  { key: 'isOwnership', label: 'Ownership (excluded from bonus pool)', type: 'checkbox', half: true },
-  { key: 'bonusOptOut', label: 'Opted out of bonus', type: 'checkbox', half: true },
+  // Covers every reason someone's excluded from bonuses — owner, owner's family member, or an
+  // opted-out manager — deliberately one field, not split by reason (an earlier "Ownership"
+  // checkbox was removed per Levi, 2026-08-27: it read as an access-control signal to anyone
+  // building a future feature, when all it ever meant here was "don't pay them a bonus").
+  { key: 'bonusOptOut', label: 'Excluded from bonus pool', type: 'checkbox' },
 ];
 
 const STYLES = styles(`
@@ -361,7 +364,7 @@ class EmployeeLifecycle extends HTMLElement {
     this._editDraft = {
       firstName: e.firstName || '', lastName: e.lastName || '', email: e.email || '',
       title: e.title || '', manager: e.manager || '', department: e.department || '',
-      vehicleNumber: e.vehicleNumber || '', isOwnership: !!e.isOwnership, bonusOptOut: !!e.bonusOptOut,
+      vehicleNumber: e.vehicleNumber || '', bonusOptOut: !!e.bonusOptOut,
     };
     this._msg = null;
     this._render();
