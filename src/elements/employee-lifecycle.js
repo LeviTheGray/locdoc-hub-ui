@@ -5,32 +5,38 @@
  *   1. ADD a new employee from a form (no steps auto-run — trigger each individually).
  *   2. ARCHIVE an employee who's leaving / RESTORE one who's back — see below.
  *   3. EDIT employee info (name, title, manager, department, van #, other flags) — plain data
- *      correction, no audit trail (declined — this isn't a financial record like Bonus
- *      Calculator's history). Hire date is shown but not editable.
+ *      correction, no audit trail (declined). Hire date is shown but not editable.
  *
- * ACTIVE STATE (per Levi, 2026-08-26 — same archive-not-delete pattern as Fleet Management):
- * Archive is the FIRST offboarding action, not a result of finishing it — clicking it flips
- * `active: false` immediately, before any offboarding automation is allowed to run. That flag then
- * decides which step checklist shows: Active → Onboarding steps; Archived → Offboarding steps.
- * The backend enforces this too (an onboarding step refuses while archived; an offboarding step
- * refuses while still active), so this panel just reflects that by branching on `active` instead
- * of a manual toggle — there's no "pick which mode you're in" control anymore.
+ * RESOURCE MODEL (per Levi, 2026-08-27 — a deliberate rework, see lifecycleSteps.js's header for
+ * the full spec): a step is done by HAVING an external record ID, not by a bare status flag. Each
+ * RESOURCE_STEP is one thing that gets created during onboarding (`recordId`) and, if
+ * `offboardable`, torn down during offboarding — the SAME key both times, targeting the SAME ID,
+ * not a disconnected pair of steps. Once a resource has a recordId there's no "Run" button left,
+ * just the ID (click to copy) and a checkmark; once archived, same thing with an archived date.
+ * Either half can also be set MANUALLY (an admin types in an ID, or marks something archived by
+ * hand) — indistinguishable afterward from the automated path. A step that reached the OLD
+ * `status:'done'` (before this rework, no recordId) still shows as done — no regression, it just
+ * won't have a copyable ID until n8n is updated to send one (that update is outside this repo).
  *
- * Each step (see STEPS below — mirrors backend/lifecycleSteps.js) has independent status:
- * pending → sent (n8n webhook fired) → done (n8n confirmed via its callback) or error. Manual
- * steps (dataExportConfirmed, userDeleted) skip the webhook entirely — they're a plain checkbox an
- * admin ticks themselves.
+ * ACTIVE STATE (same archive-not-delete pattern as Fleet Management): Archive flips `active:
+ * false` immediately — the FIRST offboarding action, not a result of finishing it. That flag
+ * decides which mode a resource's row is in: Active → its onboarding/create half; Archived → its
+ * offboarding/archive half (or, if it's not offboardable, just a read-only look at its ID).
  *
  * Data handoff (mirrors tech-spotlight-submit):
  *   • Velo → element :  init-data      { admin } | { error }
  *                       search-result  { items:[{ _id, firstName, lastName, email, title, manager,
  *                                        department, vehicleNumber, isOwnership, bonusOptOut,
- *                                        startDate, active, steps:{[key]:{status,at,error?}} }] }
- *                                      | { error }                                          (carries _ts)
- *                       action-result  { ok:true, employee } | { ok:false, error }          (carries _ts)
+ *                                        startDate, active,
+ *                                        steps:{[key]:{status,at,error?,recordId?,recordSetAt?,
+ *                                          recordSetBy?,archivedAt?,archivedBy?}} }] } | { error }
+ *                                                                                     (carries _ts)
+ *                       action-result  { ok:true, employee } | { ok:false, error }   (carries _ts)
  *   • element → Velo :  'search'            { term }
  *                       'trigger-step'      { employeeId, stepKey }
  *                       'mark-manual'       { employeeId, stepKey, done }
+ *                       'set-record-id'     { employeeId, stepKey, recordId }
+ *                       'mark-archived'     { employeeId, stepKey }
  *                       'archive-employee'  { employeeId }
  *                       'restore-employee'  { employeeId }
  *                       'update-info'       { employeeId, patch }
@@ -48,17 +54,15 @@
 import { styles, ensureMaterialSymbols } from './tokens.js';
 
 // Mirrors backend/lifecycleSteps.js — keep the two in sync if steps change.
-const ONBOARDING_STEPS = [
-  { key: 'googleWorkspace', label: 'Google Workspace user', manual: false },
-  { key: 'omsContact', label: 'OMS contact', manual: false },
-  { key: 'omsTechnician', label: 'OMS technician', manual: false },
-  { key: 'vanAssignment', label: 'Van link', manual: false, requires: (e) => !!e.vehicleNumber },
-  { key: 'vcfCard', label: 'vCard emailed to team', manual: false },
+const RESOURCE_STEPS = [
+  { key: 'googleWorkspace', label: 'Google Workspace user', manual: false, offboardable: true },
+  { key: 'omsContact', label: 'OMS contact', manual: false, offboardable: true },
+  { key: 'omsTechnician', label: 'OMS technician', manual: false, offboardable: false },
+  { key: 'vanAssignment', label: 'Van link', manual: false, offboardable: false, requires: (e) => !!e.vehicleNumber },
+  { key: 'vcfCard', label: 'vCard emailed to team', manual: false, offboardable: false },
 ];
-const OFFBOARDING_STEPS = [
-  { key: 'omsArchive', label: 'OMS contact archived', manual: false },
+const STANDALONE_OFFBOARD_STEPS = [
   { key: 'dataExportConfirmed', label: 'Data export confirmed', manual: true },
-  { key: 'userDeleted', label: 'Google Workspace user deleted', manual: true },
 ];
 
 // Mirrors backend/employeeLifecycle.web.js's EDITABLE_FIELDS.
@@ -102,7 +106,8 @@ const STYLES = styles(`
   .edit-form { margin-top: 14px; padding: 14px; background: var(--gray-50); border-radius: 10px; }
   .static-note { font-size: 12px; color: var(--gray-500); font-style: italic; margin-top: 8px; }
   .steps { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-  .step { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--gray-50, #fafafa); }
+  .step { padding: 8px 10px; border-radius: 8px; background: var(--gray-50, #fafafa); }
+  .step-row { display: flex; align-items: center; gap: 10px; }
   .step .label { flex: 1; font-size: 13px; font-weight: 600; }
   .step .when { font-size: 11px; color: var(--gray-500); }
   .step-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: none; cursor: pointer; }
@@ -111,7 +116,13 @@ const STYLES = styles(`
   .step-chip.done { background: #d1fae5; color: var(--primary-dk); cursor: default; }
   .step-chip.error { background: #fee2e2; color: #b91c1c; }
   .step-chip.na { background: none; color: var(--gray-400); cursor: default; }
+  .step-chip.archived { background: var(--gray-200); color: var(--gray-600); cursor: default; }
   .step input[type=checkbox] { width: 16px; height: 16px; }
+  .record-id { font-size: 12px; font-weight: 700; color: var(--gray-900); border-bottom: 1.5px dotted var(--gray-400); cursor: pointer; }
+  .record-id:hover { color: var(--primary-dk); border-bottom-color: var(--primary-dk); }
+  .link-sm { background: none; border: none; color: var(--primary-dk); font-weight: 600; font-size: 11px; cursor: pointer; text-decoration: underline; }
+  .manual-entry { display: flex; gap: 6px; margin-top: 8px; margin-left: 0; }
+  .manual-entry input { flex: 1; padding: 6px 8px; font-size: 12px; }
   .emp .actions { display: flex; gap: 8px; }
   .btn.ghost { background: var(--gray-100); color: var(--gray-900); }
   .btn.ghost:hover { background: var(--gray-200); }
@@ -133,6 +144,9 @@ function esc(s) {
 function fmt(at) {
   return at ? new Date(at).toLocaleString() : '';
 }
+function fmtDate(at) {
+  return at ? new Date(at).toLocaleDateString() : '';
+}
 
 class EmployeeLifecycle extends HTMLElement {
   static get observedAttributes() { return ['init-data', 'search-result', 'action-result']; }
@@ -153,6 +167,8 @@ class EmployeeLifecycle extends HTMLElement {
     this._editingId = null;    // employeeId with the edit form open
     this._editDraft = {};      // that employee's in-progress edits
     this._savingEdit = false;
+    this._manualOpenKey = null; // `${employeeId}:${stepKey}` with the "enter ID manually" input open
+    this._manualValue = '';
     this._shell = false;
   }
 
@@ -200,6 +216,8 @@ class EmployeeLifecycle extends HTMLElement {
       if (i >= 0) this._items[i] = updated;
       this._msg = { ok: true, text: 'Saved.' };
       if (this._editingId === updated._id) this._editingId = null;
+      this._manualOpenKey = null;
+      this._manualValue = '';
       if (this._creating) {
         this._creating = false;
         this._draft = {};
@@ -225,6 +243,14 @@ class EmployeeLifecycle extends HTMLElement {
       if (step && !step.disabled) {
         return this._triggerStep(step.getAttribute('data-emp'), step.getAttribute('data-step'));
       }
+      const copy = e.target.closest('[data-copy-id]');
+      if (copy) return this._copyId(copy.getAttribute('data-copy-id'));
+      const manualToggle = e.target.closest('[data-manual-toggle]');
+      if (manualToggle) return this._toggleManualEntry(manualToggle.getAttribute('data-emp'), manualToggle.getAttribute('data-step'));
+      const manualSave = e.target.closest('[data-manual-save]');
+      if (manualSave) return this._saveManualId(manualSave.getAttribute('data-emp'), manualSave.getAttribute('data-step'));
+      const markArchived = e.target.closest('[data-mark-archived]');
+      if (markArchived) return this._markArchivedManually(markArchived.getAttribute('data-emp'), markArchived.getAttribute('data-step'));
       const archive = e.target.closest('[data-archive]');
       if (archive) return this._archive(archive.getAttribute('data-archive'));
       const restore = e.target.closest('[data-restore]');
@@ -254,10 +280,22 @@ class EmployeeLifecycle extends HTMLElement {
       if (k) this._draft[k] = e.target.value;
       const ef = e.target.closest && e.target.closest('[data-editfield]');
       if (ef && ef.type !== 'checkbox') this._editDraft[ef.getAttribute('data-editfield')] = ef.value;
+      if (e.target.getAttribute && e.target.getAttribute('data-manual-input') != null) this._manualValue = e.target.value;
     });
   }
 
   _$(id) { return this.shadowRoot.getElementById(id); }
+
+  // Click-to-copy — no popover, just a clipboard write + a reused status banner. Simpler than
+  // Fleet's box-with-selected-input treatment since this panel doesn't need the offline fallback
+  // as much (IDs get pasted straight into another browser tab, not printed/handed off).
+  _copyId(value) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value)
+        .then(() => { this._msg = { ok: true, text: `Copied: ${value}` }; this._render(); })
+        .catch(() => { this._msg = { ok: false, text: `Could not copy — here it is: ${value}` }; this._render(); });
+    }
+  }
 
   _search() {
     const term = (this._$('q') && this._$('q').value || '').trim();
@@ -276,6 +314,25 @@ class EmployeeLifecycle extends HTMLElement {
   _markManual(employeeId, stepKey, done) {
     this._msg = null;
     this.dispatchEvent(new CustomEvent('mark-manual', { detail: { employeeId, stepKey, done }, bubbles: true, composed: true }));
+  }
+
+  _toggleManualEntry(employeeId, stepKey) {
+    const key = `${employeeId}:${stepKey}`;
+    this._manualOpenKey = this._manualOpenKey === key ? null : key;
+    this._manualValue = '';
+    this._render();
+  }
+
+  _saveManualId(employeeId, stepKey) {
+    const value = (this._manualValue || '').trim();
+    if (!value) { this._msg = { ok: false, text: 'Enter a record ID.' }; return this._render(); }
+    this._msg = null;
+    this.dispatchEvent(new CustomEvent('set-record-id', { detail: { employeeId, stepKey, recordId: value }, bubbles: true, composed: true }));
+  }
+
+  _markArchivedManually(employeeId, stepKey) {
+    this._msg = null;
+    this.dispatchEvent(new CustomEvent('mark-archived', { detail: { employeeId, stepKey }, bubbles: true, composed: true }));
   }
 
   _archive(employeeId) {
@@ -404,10 +461,12 @@ class EmployeeLifecycle extends HTMLElement {
   _empCard(e) {
     const name = `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.email;
     const active = e.active !== false;
-    const steps = active ? ONBOARDING_STEPS : OFFBOARDING_STEPS;
     const meta = [e.title, e.manager, e.email].filter(Boolean).map(esc).join(' · ');
     const editing = this._editingId === e._id;
     const lcBusy = this._lifecycleBusyId === e._id;
+    // Every resource shows up regardless of phase (archived-but-not-offboardable ones just go
+    // read-only); the standalone manual step only makes sense once archived.
+    const stepList = active ? RESOURCE_STEPS : [...RESOURCE_STEPS, ...STANDALONE_OFFBOARD_STEPS];
 
     return `<div class="emp card">
       <div class="top">
@@ -423,7 +482,7 @@ class EmployeeLifecycle extends HTMLElement {
         </div>
       </div>
       ${editing ? this._editForm(e) : ''}
-      <div class="steps">${steps.map((s) => this._stepRow(e, s)).join('')}</div>
+      <div class="steps">${stepList.map((s) => this._stepRow(e, s, active)).join('')}</div>
     </div>`;
   }
 
@@ -447,35 +506,93 @@ class EmployeeLifecycle extends HTMLElement {
     </div>`;
   }
 
-  _stepRow(e, step) {
+  // A resource step's row depends on phase (active = create half, archived = archive half) and
+  // whether an ID/archived date already exists — see the header comment for the full model.
+  _stepRow(e, step, active) {
     const applicable = !step.requires || step.requires(e);
-    const st = (e.steps && e.steps[step.key]) || null;
-    const status = !applicable ? 'na' : (st && st.status) || 'pending';
-    const busy = this._busyKey === `${e._id}:${step.key}`;
-    const when = st && st.at ? `<span class="when">${esc(fmt(st.at))}</span>` : '';
-    const errTxt = status === 'error' && st && st.error ? `<span class="when">${esc(st.error)}</span>` : '';
+    const st = (e.steps && e.steps[step.key]) || {};
+    const busyKey = `${e._id}:${step.key}`;
+    const busy = this._busyKey === busyKey;
+    const manualKey = busyKey;
+    const manualOpen = this._manualOpenKey === manualKey;
+    const idChip = (id) => `<span class="record-id" data-copy-id="${esc(id)}" title="Click to copy">${esc(id)}</span>`;
 
-    let control;
     if (!applicable) {
-      control = `<span class="step-chip na">N/A</span>`;
-    } else if (step.manual) {
-      control = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      return this._rowShell(step.label, '', `<span class="step-chip na">N/A</span>`);
+    }
+
+    if (step.manual) {
+      const status = st.status || 'pending';
+      const control = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
         <input type="checkbox" data-manual="${esc(step.key)}" data-emp="${esc(e._id)}" ${status === 'done' ? 'checked' : ''}>
         <span class="step-chip ${status}">${status === 'done' ? 'Confirmed' : 'Not yet'}</span>
       </label>`;
-    } else if (status === 'done') {
-      control = `<span class="step-chip done">Done</span>`;
-    } else if (status === 'sent' || busy) {
-      control = `<span class="step-chip sent">${busy ? '…' : 'Sent'}</span>`;
-    } else {
-      control = `<button class="step-chip ${status === 'error' ? 'error' : 'pending'}" data-step="${esc(step.key)}" data-emp="${esc(e._id)}">
-        ${status === 'error' ? 'Retry' : 'Trigger'}</button>`;
+      return this._rowShell(step.label, '', control);
     }
 
+    // ---- Resource step ----
+    if (active) {
+      // Create half.
+      if (st.recordId) {
+        const by = st.recordSetBy === 'manual' ? ' (entered manually)' : '';
+        return this._rowShell(step.label, `${idChip(st.recordId)}${by}`, `<span class="step-chip done">✓ Done</span>`);
+      }
+      if (st.status === 'done') {
+        // Legacy completion, from before this rework — no ID to show, still counts as done.
+        return this._rowShell(step.label, '', `<span class="step-chip done">Done</span>`);
+      }
+      const when = st.at ? `<span class="when">${esc(fmt(st.at))}</span>` : '';
+      const errTxt = st.status === 'error' && st.error ? `<span class="when">${esc(st.error)}</span>` : '';
+      let control;
+      if (st.status === 'sent' || busy) {
+        control = `<span class="step-chip sent">${busy ? '…' : 'Sent'}</span>`;
+      } else {
+        control = `<button class="step-chip ${st.status === 'error' ? 'error' : 'pending'}" data-step="${esc(step.key)}" data-emp="${esc(e._id)}">
+          ${st.status === 'error' ? 'Retry' : 'Run'}</button>`;
+      }
+      const manualToggleBtn = `<button type="button" class="link-sm" data-manual-toggle data-emp="${esc(e._id)}" data-step="${esc(step.key)}">${manualOpen ? 'Cancel' : 'Enter ID manually'}</button>`;
+      const manualRow = manualOpen ? `<div class="manual-entry">
+          <input type="text" placeholder="Record ID" data-manual-input value="${esc(this._manualValue)}">
+          <button type="button" class="btn ghost sm" data-manual-save data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Save</button>
+        </div>` : '';
+      return this._rowShell(step.label, `${when}${errTxt}`, control, `${manualToggleBtn}${manualRow}`);
+    }
+
+    // Archived employee.
+    if (!step.offboardable) {
+      // No teardown half — just show whatever ID it has on file, nothing to do.
+      return this._rowShell(step.label, st.recordId ? idChip(st.recordId) : '<span class="empty" style="padding:0">no record on file</span>', '');
+    }
+    if (st.archivedAt) {
+      const by = st.archivedBy === 'manual' ? ' (marked manually)' : '';
+      const idNote = st.recordId ? ` — ${idChip(st.recordId)}` : '';
+      return this._rowShell(step.label, `Archived ${esc(fmtDate(st.archivedAt))}${by}${idNote}`, `<span class="step-chip archived">✓ Archived</span>`);
+    }
+    if (st.status === 'done') {
+      return this._rowShell(step.label, '', `<span class="step-chip done">Done</span>`);
+    }
+    const when = st.at ? `<span class="when">${esc(fmt(st.at))}</span>` : '';
+    const errTxt = st.status === 'error' && st.error ? `<span class="when">${esc(st.error)}</span>` : '';
+    let control;
+    if (st.status === 'sent' || busy) {
+      control = `<span class="step-chip sent">${busy ? '…' : 'Sent'}</span>`;
+    } else {
+      control = `<button class="step-chip ${st.status === 'error' ? 'error' : 'pending'}" data-step="${esc(step.key)}" data-emp="${esc(e._id)}">
+        ${st.status === 'error' ? 'Retry' : 'Run'}</button>`;
+    }
+    const manualToggleBtn = `<button type="button" class="link-sm" data-mark-archived data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Mark archived manually</button>`;
+    const idNote = st.recordId ? `${idChip(st.recordId)} — ` : '';
+    return this._rowShell(step.label, `${idNote}${when}${errTxt}`, control, manualToggleBtn);
+  }
+
+  _rowShell(label, meta, control, extraLine) {
     return `<div class="step">
-      <span class="label">${esc(step.label)}</span>
-      ${when}${errTxt}
-      ${control}
+      <div class="step-row">
+        <span class="label">${esc(label)}</span>
+        ${meta}
+        ${control}
+      </div>
+      ${extraLine || ''}
     </div>`;
   }
 }
