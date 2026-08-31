@@ -53,11 +53,13 @@
  *                       generate-result { poolAmount, setByName, setDate, items:[RawRow] } | { error } (carries _ts)
  *                       save-result     { ok:true } | { ok:false, error }           (carries _ts)
  *                       history-result  { items:[SavedRow] } | { error }            (carries _ts)
+ *                       export-result   { period, rows:[ExportRow] } | { error }    (carries _ts)
  *   • element → Velo :  'get-pool'     { period }
  *                       'save-pool'    { period, poolAmount }
  *                       'generate-run' { period }
  *                       'save-run'     { period, poolAmount, records:[FinalRow] }
  *                       'list-history' { term }
+ *                       'export-run'   { period }
  *                       'navigate'     { key: 'hub' }
  *
  * Pool: { period, poolAmount, setByName, setDate }.
@@ -67,6 +69,9 @@
  * FinalRow (what gets saved): RawRow's employeeId/employeeName/reliabilityScore/tenureYears plus
  * reliabilityShare, profitabilityScore, profitabilityShare, tenureShare, suggestedBonus,
  * status:'confirmed'|'excluded'.
+ * ExportRow (CSV export, per Chris Lowery 2026-08-27 — every employee, not just the ones in the
+ * saved run, sorted last/first name): { firstName, lastName, department, status:'Confirmed'|
+ * 'Excluded'|'Not included in run', payout }.
  *
  * The backend re-checks authorization on every method (backend/bonusCalculator.web.js) — the
  * `canManage` flag here only decides what UI to paint.
@@ -186,7 +191,7 @@ const STYLES = styles(`
 `);
 
 class BonusCalculator extends HTMLElement {
-  static get observedAttributes() { return ['init-data', 'pool-result', 'save-pool-result', 'generate-result', 'save-result', 'history-result']; }
+  static get observedAttributes() { return ['init-data', 'pool-result', 'save-pool-result', 'generate-result', 'save-result', 'history-result', 'export-result']; }
 
   constructor() {
     super();
@@ -208,6 +213,9 @@ class BonusCalculator extends HTMLElement {
     this._history = [];
     this._historyLoaded = false;
     this._shell = false;
+    this._exportPeriod = '';
+    this._exporting = false;
+    this._exportMsg = null;
   }
 
   connectedCallback() {
@@ -225,6 +233,7 @@ class BonusCalculator extends HTMLElement {
     if (name === 'generate-result')  this._applyGenerate(value);
     if (name === 'save-result')      this._applySave(value);
     if (name === 'history-result')   this._applyHistory(value);
+    if (name === 'export-result')    this._applyExport(value);
   }
 
   _$(id) { return this.shadowRoot.getElementById(id); }
@@ -294,6 +303,36 @@ class BonusCalculator extends HTMLElement {
     this._render();
   }
 
+  // Builds the actual CSV file and triggers a browser download — nothing server-side generates or
+  // stores it, this is the only place the file itself comes into being.
+  _applyExport(json) {
+    let p = {};
+    try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
+    this._exporting = false;
+    if (p.error) {
+      this._exportMsg = { ok: false, text: p.error };
+      this._render();
+      return;
+    }
+    const csvField = (v) => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['Last Name', 'First Name', 'Department', 'Status', 'Payout'];
+    const lines = [header.join(',')].concat(
+      (p.rows || []).map((r) => [r.lastName, r.firstName, r.department, r.status, r.payout].map(csvField).join(','))
+    );
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bonus-payouts-${(p.period || 'export').replace(/\s+/g, '-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this._exportMsg = { ok: true, text: `Exported ${(p.rows || []).length} employees for ${p.period}.` };
+    this._render();
+  }
+
   _applyHistory(json) {
     let p = {};
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
@@ -316,6 +355,7 @@ class BonusCalculator extends HTMLElement {
       if (e.target.closest('[data-save-run]')) return this._saveRun();
       if (e.target.closest('[data-new-run]')) return this._newRun();
       if (e.target.closest('[data-search]')) return this._searchHistory();
+      if (e.target.closest('[data-export]')) return this._exportRun();
       const info = e.target.closest('[data-info]');
       if (info) return this._toggleInfo(Number(info.getAttribute('data-info')));
       const confirmBtn = e.target.closest('[data-confirm]');
@@ -350,6 +390,7 @@ class BonusCalculator extends HTMLElement {
     });
     this.shadowRoot.addEventListener('change', (e) => {
       if (e.target.getAttribute && e.target.getAttribute('data-field') === 'period') this._onPeriodChange(e.target.value);
+      if (e.target.getAttribute && e.target.getAttribute('data-field') === 'exportPeriod') this._exportPeriod = e.target.value;
     });
     this.shadowRoot.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target && e.target.id === 'hq') { e.preventDefault(); this._searchHistory(); }
@@ -460,6 +501,23 @@ class BonusCalculator extends HTMLElement {
   _searchHistory() {
     const term = (this._$('hq') && this._$('hq').value || '').trim();
     this.dispatchEvent(new CustomEvent('list-history', { detail: { term }, bubbles: true, composed: true }));
+  }
+
+  _exportRun() {
+    if (this._exporting) return;
+    const period = this._exportPeriod || this._historyPeriods()[0];
+    if (!period) { this._exportMsg = { ok: false, text: 'No saved payout periods to export yet.' }; return this._render(); }
+    this._exporting = true;
+    this._exportMsg = null;
+    this._render();
+    this.dispatchEvent(new CustomEvent('export-run', { detail: { period }, bubbles: true, composed: true }));
+  }
+
+  // Distinct periods that actually have a saved run, newest label first — this is what the export
+  // period picker offers, since exporting only makes sense for a period someone already audited
+  // and saved (see exportBonusRun's header comment on the backend).
+  _historyPeriods() {
+    return Array.from(new Set((this._history || []).map((h) => h.period).filter(Boolean)));
   }
 
   _loadHistory() {
@@ -634,8 +692,17 @@ class BonusCalculator extends HTMLElement {
   }
 
   _historySection() {
+    const periods = this._historyPeriods();
+    const exportRow = periods.length ? `<div class="row2" style="align-items:flex-end;margin-bottom:16px">
+        <div><label class="f">Export CSV for period</label>
+          <select data-field="exportPeriod">${periods.map((p) => `<option value="${esc(p)}" ${this._exportPeriod === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+        </div>
+        <div><button class="btn ${this._exporting ? 'is-loading' : ''}" data-export>${this._exporting ? '<span class="btn-spinner"></span>Exporting…' : 'Export CSV'}</button></div>
+      </div>
+      ${this._exportMsg ? `<div class="msg ${this._exportMsg.ok ? 'ok' : 'err'}">${esc(this._exportMsg.text)}</div>` : ''}` : '';
     return `<div class="section">
       <h2>Payout history</h2>
+      ${exportRow}
       <div class="searchbar">
         <input type="text" id="hq" placeholder="Search employee or period…">
         <button class="btn" data-search>Search</button>
@@ -644,6 +711,9 @@ class BonusCalculator extends HTMLElement {
     </div>`;
   }
 
+  // (CSV export lives in _historySection()/_exportRun()/_applyExport() above — an export only
+  // makes sense against a period that's already been saved, so it's offered from History, not the
+  // in-progress review table.)
   _historyBody() {
     if (!this._historyLoaded) return `<p class="empty">Loading history…</p>`;
     if (!this._history.length) return `<p class="empty">No payouts saved yet.</p>`;
