@@ -8,20 +8,27 @@
  * (non-excluded) employee, so suggestedBonus = Σ(share × pool) over the three dimensions,
  * rounded to the nearest dollar for payroll.
  *
- * Setting the pool and generating payouts are two separate steps, usually done by two different
- * people (per Levi, 2026-08-26): the accounting manager sets the Bonus Pool amount for a period;
- * separately, whoever runs payroll (C-Suite) opens the tool later and generates/audits suggested
- * payouts against whatever pool was set. So the pool is fetched/saved server-side per period
- * (backend/bonusCalculator.web.js's BonusPools collection), not just held in the browser —
- * Generate is a no-op with an inline error if no pool has been set yet for the selected period.
+ * THREE STEPS, THREE PEOPLE (corrected 2026-08-27 — see bonusCalculator.web.js's header for the
+ * full context): Step 1 (Set Bonus Pool) and Step 2 (Generate Payouts, review, save) are BOTH the
+ * accounting manager (Andrew Ingram). Step 3 (Export) is Chris Lowery (C-Suite/payroll), who
+ * reopens whatever Ingram already saved to run payroll — no confirm/exclude editing at that step.
+ * Step 3 is grayed out until Step 2 has produced a saved payout for the selected period.
+ *
+ * A period has ONE current saved payout, not a history of every save (changed 2026-08-27, per
+ * Levi — re-saving a period used to just append more rows, producing duplicates like "Baggett"
+ * showing twice). Once a period has been saved, Step 2 shows a summary — pool amount, who
+ * generated it and when — with an "Edit" button that reopens the same numbers for further
+ * confirm/exclude or Profitability changes; saving again REPLACES that period's payout outright.
  *
  * Flow:
  *   1. Pick a period (bonuses are monthly — dropdown of last/this/next month, e.g. "August 2026",
  *      defaulting to the current month). "Set Bonus Pool" saves an amount for that period (shows
- *      whatever's currently set, if anything). Separately, "Generate suggested payouts" reads
- *      that saved pool and returns every eligible employee's raw Reliability score +
- *      per-criterion breakdown (from AssessmentScores, trailing 190 days) and Tenure years (from
- *      Employees.startDate) — refuses with an error if no pool exists for the period yet.
+ *      whatever's currently set, if anything). Separately, Step 2 either offers "Generate
+ *      suggested payouts" (reads the saved pool and returns every eligible employee's raw
+ *      Reliability score + per-criterion breakdown from AssessmentScores, trailing 190 days, and
+ *      Tenure years from Employees.startDate — refuses with an error if no pool exists yet) or, if
+ *      the period already has a saved payout, a summary + Edit button that reuses those same
+ *      already-generated numbers instead of re-pulling fresh data.
  *   2. Review table, one row per employee. Reliability/Tenure are read-only (computed).
  *      Profitability isn't a solved formula yet — the old app defaulted it to a flat 3 — so it's
  *      editable here, defaulting to 3, VISIBLY a placeholder rather than a hidden constant;
@@ -40,35 +47,40 @@
  *      toggle doesn't touch their teammates, only the team-level one mass-applies (and shows no
  *      button selected once members have diverged, since there's no single value to represent).
  *
- *      Audit, not data entry (per Chris, the C-Suite reviewer, via Levi 2026-08-26): each row gets
- *      marked ✓ Confirm (pay the suggested amount) or ✗ Exclude (pay $0 — terminated, not yet
- *      eligible, etc.). Excluding someone removes them from every dimension's sum, so every other
- *      row's share/suggested bonus recomputes live. "Save payouts" only enables once every row has
- *      been explicitly marked, so a run can't be blindly bulk-submitted without being looked at.
+ *      Audit, not data entry: each row gets marked ✓ Confirm (pay the suggested amount) or
+ *      ✗ Exclude (pay $0 — terminated, not yet eligible, etc.). Excluding someone removes them
+ *      from every dimension's sum, so every other row's share/suggested bonus recomputes live.
+ *      "Save payouts" only enables once every row has been explicitly marked, so a run can't be
+ *      blindly bulk-submitted without being looked at. When editing an already-saved period, the
+ *      ⓘ breakdown button is disabled — the per-criterion Reliability breakdown isn't re-stored on
+ *      save, only the final score, so there's nothing to show without a misleading "no data" flag.
  *
  * Data handoff:
- *   • Velo → element :  init-data       { canManage } | { error }
- *                       pool-result     { pool: Pool|null } | { error }             (carries _ts)
- *                       save-pool-result{ ok:true, pool:Pool } | { ok:false, error } (carries _ts)
- *                       generate-result { poolAmount, setByName, setDate, items:[RawRow] } | { error } (carries _ts)
- *                       save-result     { ok:true } | { ok:false, error }           (carries _ts)
- *                       history-result  { items:[SavedRow] } | { error }            (carries _ts)
- *                       export-result   { period, rows:[ExportRow] } | { error }    (carries _ts)
- *   • element → Velo :  'get-pool'     { period }
- *                       'save-pool'    { period, poolAmount }
- *                       'generate-run' { period }
- *                       'save-run'     { period, poolAmount, records:[FinalRow] }
- *                       'list-history' { term }
- *                       'export-run'   { period }
- *                       'navigate'     { key: 'hub' }
+ *   • Velo → element :  init-data        { canManage } | { error }
+ *                       pool-result      { pool: Pool|null } | { error }             (carries _ts)
+ *                       save-pool-result { ok:true, pool:Pool } | { ok:false, error } (carries _ts)
+ *                       generate-result  { poolAmount, setByName, setDate, items:[RawRow] } | { error } (carries _ts)
+ *                       save-result      { ok:true } | { ok:false, error }           (carries _ts)
+ *                       saved-run-result { savedRun: SavedRun|null } | { error }     (carries _ts)
+ *                       export-result    { period, rows:[ExportRow] } | { error }    (carries _ts)
+ *   • element → Velo :  'get-pool'      { period }
+ *                       'save-pool'     { period, poolAmount }
+ *                       'generate-run'  { period }
+ *                       'save-run'      { period, poolAmount, records:[FinalRow] }
+ *                       'get-saved-run' { period }
+ *                       'export-run'    { period }
+ *                       'navigate'      { key: 'hub' }
  *
  * Pool: { period, poolAmount, setByName, setDate }.
  *
  * RawRow: { employeeId, employeeName, department, reliabilityScore, hasAssessmentData,
  * reliabilityBreakdown, assessmentCount, tenureYears, hasStartDate, startDate }.
- * FinalRow (what gets saved): RawRow's employeeId/employeeName/reliabilityScore/tenureYears plus
- * reliabilityShare, profitabilityScore, profitabilityShare, tenureShare, suggestedBonus,
- * status:'confirmed'|'excluded'.
+ * FinalRow (what gets saved): RawRow's employeeId/employeeName/department/reliabilityScore/
+ * tenureYears plus reliabilityShare, profitabilityScore, profitabilityShare, tenureShare,
+ * suggestedBonus, status:'confirmed'|'excluded'.
+ * SavedRun (a period's current saved payout — the Step 2 summary + Edit source): { poolAmount,
+ * generatedByName, generatedDate, items:[RawRow-shaped, hasAssessmentData/hasStartDate hardcoded
+ * true, reliabilityBreakdown:null] }.
  * ExportRow (CSV export, per Chris Lowery 2026-08-27 — every employee, not just the ones in the
  * saved run, sorted last/first name): { firstName, lastName, department, status:'Confirmed'|
  * 'Excluded'|'Not included in run', payout }.
@@ -180,6 +192,8 @@ const STYLES = styles(`
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--gray-100); color: var(--gray-600); }
   .pill.excluded { background: #fee2e2; color: #991b1b; }
   .empty { font-size: 13px; color: var(--gray-400); padding: 12px 0; }
+  .step-disabled { opacity: .5; pointer-events: none; }
+  .summary-line { font-size: 13px; color: var(--gray-600); margin-top: 4px; }
   .msg { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 14px; display: none; }
   .msg.err { display: block; background: #fee2e2; color: #b91c1c; }
   .msg.ok  { display: block; background: #d1fae5; color: var(--primary-dk); }
@@ -191,7 +205,7 @@ const STYLES = styles(`
 `);
 
 class BonusCalculator extends HTMLElement {
-  static get observedAttributes() { return ['init-data', 'pool-result', 'save-pool-result', 'generate-result', 'save-result', 'history-result', 'export-result']; }
+  static get observedAttributes() { return ['init-data', 'pool-result', 'save-pool-result', 'generate-result', 'save-result', 'saved-run-result', 'export-result']; }
 
   constructor() {
     super();
@@ -207,13 +221,12 @@ class BonusCalculator extends HTMLElement {
     this._currentPool = undefined; // undefined = not fetched yet, null = fetched, none set
     this._savingPool = false;
     this._poolMsg = null;
-    this._poolAmount = null;     // the locked-in pool amount for the generated run (read-only)
-    this._rows = null;       // null until a run is generated
+    this._poolAmount = null;     // the locked-in pool amount for the generated/edited run (read-only)
+    this._rows = null;       // null until a run is being generated or edited
+    this._editingSavedRun = false; // true when _rows came from reopening a saved run (Edit), not a fresh Generate
     this._openInfo = null;   // index of the row whose detail panel is expanded
-    this._history = [];
-    this._historyLoaded = false;
+    this._savedRun = undefined; // undefined = not fetched yet for this period, null = none saved, else SavedRun
     this._shell = false;
-    this._exportPeriod = '';
     this._exporting = false;
     this._exportMsg = null;
   }
@@ -232,7 +245,7 @@ class BonusCalculator extends HTMLElement {
     if (name === 'save-pool-result') this._applySavePool(value);
     if (name === 'generate-result')  this._applyGenerate(value);
     if (name === 'save-result')      this._applySave(value);
-    if (name === 'history-result')   this._applyHistory(value);
+    if (name === 'saved-run-result') this._applySavedRun(value);
     if (name === 'export-result')    this._applyExport(value);
   }
 
@@ -245,14 +258,25 @@ class BonusCalculator extends HTMLElement {
     this._error = p.error || null;
     this._loaded = true;
     if (this._canManage) {
-      if (!this._historyLoaded) this._loadHistory();
       this._fetchPool();
+      this._fetchSavedRun();
     }
     this._render();
   }
 
   _fetchPool() {
     this.dispatchEvent(new CustomEvent('get-pool', { detail: { period: this._period }, bubbles: true, composed: true }));
+  }
+
+  _fetchSavedRun() {
+    this.dispatchEvent(new CustomEvent('get-saved-run', { detail: { period: this._period }, bubbles: true, composed: true }));
+  }
+
+  _applySavedRun(json) {
+    let p = {};
+    try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
+    this._savedRun = p.savedRun || null;
+    this._render();
   }
 
   _applyPool(json) {
@@ -283,6 +307,7 @@ class BonusCalculator extends HTMLElement {
     if (p.error) { this._msg = { ok: false, text: p.error }; this._render(); return; }
     this._poolAmount = p.poolAmount;
     this._rows = (p.items || []).map((r) => ({ ...r, profitabilityScore: DEFAULT_PROFITABILITY, status: 'pending' }));
+    this._editingSavedRun = false;
     this._openInfo = null;
     this._msg = null;
     this._render();
@@ -295,8 +320,10 @@ class BonusCalculator extends HTMLElement {
     if (p.ok) {
       this._msg = { ok: true, text: `Saved ${this._rows.length} payout${this._rows.length === 1 ? '' : 's'} for ${this._period || 'this run'}.` };
       this._rows = null;
+      this._editingSavedRun = false;
       this._poolAmount = null;
-      this._loadHistory();
+      this._savedRun = undefined; // re-fetch so the Step 2 summary/Step 3 export reflect what was just saved
+      this._fetchSavedRun();
     } else {
       this._msg = { ok: false, text: p.error || 'Save failed.' };
     }
@@ -333,14 +360,6 @@ class BonusCalculator extends HTMLElement {
     this._render();
   }
 
-  _applyHistory(json) {
-    let p = {};
-    try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
-    this._history = Array.isArray(p.items) ? p.items : [];
-    this._historyLoaded = true;
-    this._render();
-  }
-
   _renderShell() {
     if (this._shell) return;
     this._shell = true;
@@ -354,7 +373,7 @@ class BonusCalculator extends HTMLElement {
       if (e.target.closest('[data-generate]')) return this._generate();
       if (e.target.closest('[data-save-run]')) return this._saveRun();
       if (e.target.closest('[data-new-run]')) return this._newRun();
-      if (e.target.closest('[data-search]')) return this._searchHistory();
+      if (e.target.closest('[data-edit-run]')) return this._editRun();
       if (e.target.closest('[data-export]')) return this._exportRun();
       const info = e.target.closest('[data-info]');
       if (info) return this._toggleInfo(Number(info.getAttribute('data-info')));
@@ -390,10 +409,6 @@ class BonusCalculator extends HTMLElement {
     });
     this.shadowRoot.addEventListener('change', (e) => {
       if (e.target.getAttribute && e.target.getAttribute('data-field') === 'period') this._onPeriodChange(e.target.value);
-      if (e.target.getAttribute && e.target.getAttribute('data-field') === 'exportPeriod') this._exportPeriod = e.target.value;
-    });
-    this.shadowRoot.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.target && e.target.id === 'hq') { e.preventDefault(); this._searchHistory(); }
     });
   }
 
@@ -402,8 +417,14 @@ class BonusCalculator extends HTMLElement {
     this._currentPool = undefined;
     this._poolInput = '';
     this._poolMsg = null;
+    this._rows = null;
+    this._editingSavedRun = false;
+    this._poolAmount = null;
+    this._savedRun = undefined;
+    this._msg = null;
     this._render();
     this._fetchPool();
+    this._fetchSavedRun();
   }
 
   _savePool() {
@@ -432,6 +453,20 @@ class BonusCalculator extends HTMLElement {
 
   _newRun() {
     this._rows = null;
+    this._editingSavedRun = false;
+    this._openInfo = null;
+    this._msg = null;
+    this._render();
+  }
+
+  // Reopens the period's current saved payout for further confirm/exclude or Profitability
+  // changes, reusing its already-generated numbers rather than re-pulling fresh Reliability/
+  // Tenure data (per Levi, 2026-08-27) — saving again replaces that period's payout outright.
+  _editRun() {
+    if (!this._savedRun) return;
+    this._poolAmount = this._savedRun.poolAmount;
+    this._rows = this._savedRun.items.map((r) => ({ ...r }));
+    this._editingSavedRun = true;
     this._openInfo = null;
     this._msg = null;
     this._render();
@@ -482,7 +517,7 @@ class BonusCalculator extends HTMLElement {
     if (this._saving || !this._rows || !this._allReviewed()) return;
     const computed = this._computeShares();
     const records = computed.map((r) => ({
-      employeeId: r.employeeId, employeeName: r.employeeName,
+      employeeId: r.employeeId, employeeName: r.employeeName, department: r.department || '',
       reliabilityScore: r.reliabilityScore, reliabilityShare: r.reliabilityShare,
       profitabilityScore: Number(r.profitabilityScore) || 0, profitabilityShare: r.profitabilityShare,
       tenureYears: r.tenureYears, tenureShare: r.tenureShare,
@@ -498,30 +533,15 @@ class BonusCalculator extends HTMLElement {
     }));
   }
 
-  _searchHistory() {
-    const term = (this._$('hq') && this._$('hq').value || '').trim();
-    this.dispatchEvent(new CustomEvent('list-history', { detail: { term }, bubbles: true, composed: true }));
-  }
-
+  // Always exports the currently-selected period's saved payout — Step 3 is scoped to one period
+  // at a time (per Levi, 2026-08-27), not a cross-period picker, since that's how Chris actually
+  // uses it (open the period Ingram just finished, export, run payroll).
   _exportRun() {
-    if (this._exporting) return;
-    const period = this._exportPeriod || this._historyPeriods()[0];
-    if (!period) { this._exportMsg = { ok: false, text: 'No saved payout periods to export yet.' }; return this._render(); }
+    if (this._exporting || !this._savedRun) return;
     this._exporting = true;
     this._exportMsg = null;
     this._render();
-    this.dispatchEvent(new CustomEvent('export-run', { detail: { period }, bubbles: true, composed: true }));
-  }
-
-  // Distinct periods that actually have a saved run, newest label first — this is what the export
-  // period picker offers, since exporting only makes sense for a period someone already audited
-  // and saved (see exportBonusRun's header comment on the backend).
-  _historyPeriods() {
-    return Array.from(new Set((this._history || []).map((h) => h.period).filter(Boolean)));
-  }
-
-  _loadHistory() {
-    this.dispatchEvent(new CustomEvent('list-history', { detail: { term: '' }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('export-run', { detail: { period: this._period }, bubbles: true, composed: true }));
   }
 
   _render() {
@@ -539,12 +559,13 @@ class BonusCalculator extends HTMLElement {
     }
     main.innerHTML = `
       ${this._msg ? `<div class="msg ${this._msg.ok ? 'ok' : 'err'}">${esc(this._msg.text)}</div>` : ''}
-      ${this._rows ? this._reviewSection() : this._startSection()}
-      ${this._historySection()}
+      ${this._poolSection()}
+      ${this._rows ? this._reviewSection() : this._payoutSection()}
+      ${this._exportSection()}
       <button class="link" data-nav>← Back to the Hub</button>`;
   }
 
-  _startSection() {
+  _poolSection() {
     const opts = monthOptions().map((m) => `<option value="${esc(m)}" ${this._period === m ? 'selected' : ''}>${esc(m)}</option>`).join('');
     const periodPicker = `<div><label class="f">Period</label><select data-field="period">${opts}</select></div>`;
 
@@ -553,9 +574,8 @@ class BonusCalculator extends HTMLElement {
     else if (this._currentPool) poolStatus = `<p class="empty" style="padding:6px 0 0;color:var(--primary-dk)">Currently set to ${money(this._currentPool.poolAmount)}, by ${esc(this._currentPool.setByName)} on ${esc(this._currentPool.setDate)}.</p>`;
     else poolStatus = `<p class="empty" style="padding:6px 0 0">No bonus pool has been set for ${esc(this._period)} yet.</p>`;
 
-    return `
-    <div class="section card" style="padding:18px 20px">
-      <h2>Step 1 — Set Bonus Pool <span style="font-weight:400;color:var(--gray-400);text-transform:none;letter-spacing:0;font-size:12px">(usually the accounting manager)</span></h2>
+    return `<div class="section card" style="padding:18px 20px">
+      <h2>Step 1 — Set Bonus Pool <span style="font-weight:400;color:var(--gray-400);text-transform:none;letter-spacing:0;font-size:12px">(the accounting manager)</span></h2>
       <div class="row2">
         ${periodPicker}
         <div><label class="f">Bonus Pool amount</label>
@@ -565,9 +585,34 @@ class BonusCalculator extends HTMLElement {
       ${this._poolMsg ? `<div class="msg ${this._poolMsg.ok ? 'ok' : 'err'}" style="margin-top:10px">${esc(this._poolMsg.text)}</div>` : ''}
       <button class="btn ${this._savingPool ? 'is-loading' : ''}" data-save-pool style="margin-top:16px">
         ${this._savingPool ? '<span class="btn-spinner"></span>Saving…' : 'Set Bonus Pool'}</button>
-    </div>
-    <div class="section card" style="padding:18px 20px">
-      <h2>Step 2 — Generate Payouts <span style="font-weight:400;color:var(--gray-400);text-transform:none;letter-spacing:0;font-size:12px">(usually C-Suite / payroll)</span></h2>
+    </div>`;
+  }
+
+  // Step 2 — dynamic on whether this period already has a saved payout: a summary + Edit button
+  // if so, or the original "Generate suggested payouts" button if this is a brand-new period.
+  _payoutSection() {
+    const heading = `<h2>Step 2 — Generate Payouts <span style="font-weight:400;color:var(--gray-400);text-transform:none;letter-spacing:0;font-size:12px">(the accounting manager)</span></h2>`;
+
+    if (this._savedRun === undefined) {
+      return `<div class="section card" style="padding:18px 20px">${heading}<p class="empty">Checking for an existing payout…</p></div>`;
+    }
+
+    if (this._savedRun) {
+      const sr = this._savedRun;
+      const confirmedCount = sr.items.filter((r) => r.status !== 'excluded').length;
+      return `<div class="section card" style="padding:18px 20px">
+        ${heading}
+        <div class="pool-breakdown" style="margin-bottom:0">
+          <div class="pool-tile"><div class="l">Total Pool</div><div class="v">${money(sr.poolAmount)}</div></div>
+          <div class="pool-tile"><div class="l">Confirmed</div><div class="v">${confirmedCount} of ${sr.items.length}</div></div>
+        </div>
+        <div class="summary-line">Generated by ${esc(sr.generatedByName)} on ${esc(sr.generatedDate)}.</div>
+        <button class="btn ghost" data-edit-run style="margin-top:16px">Edit</button>
+      </div>`;
+    }
+
+    return `<div class="section card" style="padding:18px 20px">
+      ${heading}
       <div class="sub" style="margin-bottom:0">Period: <strong>${esc(this._period)}</strong> — generates against whatever pool was set in Step 1.</div>
       <button class="btn ${this._generating ? 'is-loading' : ''}" data-generate style="margin-top:16px">
         ${this._generating ? '<span class="btn-spinner"></span>Generating…' : 'Generate suggested payouts'}</button>
@@ -578,16 +623,34 @@ class BonusCalculator extends HTMLElement {
     const total = (this._rows || []).length;
     const reviewed = (this._rows || []).filter((r) => r.status !== 'pending').length;
     const done = reviewed === total && total > 0;
+    const title = this._editingSavedRun ? `Edit — ${esc(this._period) || '(no period set)'}` : `Review — ${esc(this._period) || '(no period set)'}`;
+    const cancelLabel = this._editingSavedRun ? 'Cancel' : 'Start over';
     return `<div class="section card" style="padding:18px 20px" id="reviewCard">
-      <h2>Review — ${esc(this._period) || '(no period set)'}</h2>
+      <h2>${title}</h2>
       <div class="disclaimer">These are SUGGESTED figures — Profitability defaults to 3 for everyone since it isn't a solved calculation yet. Confirm (✓) or exclude (✗) every person before saving; excluding someone recalculates everyone else's share.</div>
       <div id="tableHolder">${this._tableHtml()}</div>
       <div class="review-progress ${done ? 'done' : ''}">${reviewed} of ${total} reviewed</div>
       <div style="display:flex;gap:10px;margin-top:8px">
         <button class="btn ${this._saving ? 'is-loading' : ''}" data-save-run ${done && !this._saving ? '' : 'disabled'}>
           ${this._saving ? '<span class="btn-spinner"></span>Saving…' : 'Save payouts'}</button>
-        <button class="btn ghost" data-new-run>Start over</button>
+        <button class="btn ghost" data-new-run>${cancelLabel}</button>
       </div>
+    </div>`;
+  }
+
+  // Step 3 — Chris Lowery's step (per Levi, 2026-08-27): grayed out until Step 2 has produced a
+  // saved payout for the selected period; once it has, shows who/when it was generated and an
+  // Export CSV button. No period picker here — always the currently-selected period (this._period).
+  _exportSection() {
+    const ready = !!this._savedRun;
+    return `<div class="section card ${ready ? '' : 'step-disabled'}" style="padding:18px 20px">
+      <h2>Step 3 — Export <span style="font-weight:400;color:var(--gray-400);text-transform:none;letter-spacing:0;font-size:12px">(C-Suite / payroll)</span></h2>
+      ${ready
+        ? `<div class="summary-line">Generated by ${esc(this._savedRun.generatedByName)} on ${esc(this._savedRun.generatedDate)} — ready to export.</div>`
+        : `<p class="empty">Generate and save a payout for ${esc(this._period)} first.</p>`}
+      ${this._exportMsg ? `<div class="msg ${this._exportMsg.ok ? 'ok' : 'err'}" style="margin-top:10px">${esc(this._exportMsg.text)}</div>` : ''}
+      <button class="btn ${this._exporting ? 'is-loading' : ''}" data-export style="margin-top:16px" ${ready && !this._exporting ? '' : 'disabled'}>
+        ${this._exporting ? '<span class="btn-spinner"></span>Exporting…' : 'Export CSV'}</button>
     </div>`;
   }
 
@@ -668,7 +731,7 @@ class BonusCalculator extends HTMLElement {
         const excluded = r.status === 'excluded';
         const row = `<tr class="${excluded ? 'excluded' : ''}">
           <td><div class="name-cell">
-            <button type="button" class="info-btn ${this._openInfo === i ? 'open' : ''}" data-info="${i}" aria-label="Score breakdown">i</button>
+            <button type="button" class="info-btn ${this._openInfo === i ? 'open' : ''}" data-info="${i}" aria-label="Score breakdown" ${this._editingSavedRun ? 'disabled title="Breakdown only available right after generating"' : ''}>i</button>
             <span class="name">${esc(r.employeeName)}</span>
           </div></td>
           <td>${r.reliabilityScore.toFixed(2)}${!r.hasAssessmentData ? '<span class="flag">no recent assessments</span>' : ''}<div class="share">${pct(r.reliabilityShare)} share</div></td>
@@ -691,48 +754,6 @@ class BonusCalculator extends HTMLElement {
     </table></div>`;
   }
 
-  _historySection() {
-    const periods = this._historyPeriods();
-    const exportRow = periods.length ? `<div class="row2" style="align-items:flex-end;margin-bottom:16px">
-        <div><label class="f">Export CSV for period</label>
-          <select data-field="exportPeriod">${periods.map((p) => `<option value="${esc(p)}" ${this._exportPeriod === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
-        </div>
-        <div><button class="btn ${this._exporting ? 'is-loading' : ''}" data-export>${this._exporting ? '<span class="btn-spinner"></span>Exporting…' : 'Export CSV'}</button></div>
-      </div>
-      ${this._exportMsg ? `<div class="msg ${this._exportMsg.ok ? 'ok' : 'err'}">${esc(this._exportMsg.text)}</div>` : ''}` : '';
-    return `<div class="section">
-      <h2>Payout history</h2>
-      ${exportRow}
-      <div class="searchbar">
-        <input type="text" id="hq" placeholder="Search employee or period…">
-        <button class="btn" data-search>Search</button>
-      </div>
-      <div class="list">${this._historyBody()}</div>
-    </div>`;
-  }
-
-  // (CSV export lives in _historySection()/_exportRun()/_applyExport() above — an export only
-  // makes sense against a period that's already been saved, so it's offered from History, not the
-  // in-progress review table.)
-  _historyBody() {
-    if (!this._historyLoaded) return `<p class="empty">Loading history…</p>`;
-    if (!this._history.length) return `<p class="empty">No payouts saved yet.</p>`;
-    return this._history.map((c) => this._historyCard(c)).join('');
-  }
-
-  _historyCard(c) {
-    const meta = [c.period, c.createdDate, c.enteredByName ? `by ${c.enteredByName}` : ''].filter(Boolean).map(esc).join(' · ');
-    const excluded = c.status === 'excluded';
-    return `<div class="calc card">
-      <div class="top">
-        <div class="name">${esc(c.employeeName)}</div>
-        ${excluded ? '<span class="pill excluded">Excluded</span>' : ''}
-        <div class="amount">${money(c.actualPayout)}</div>
-      </div>
-      ${meta ? `<div class="meta">${meta}</div>` : ''}
-      ${!excluded ? `<div class="meta">Reliability ${pct(c.reliabilityShare)} · Profitability ${pct(c.profitabilityShare)} · Tenure ${pct(c.tenureShare)} · Pool ${money(c.poolAmount)}</div>` : ''}
-    </div>`;
-  }
 }
 
 customElements.define('bonus-calculator', BonusCalculator);
