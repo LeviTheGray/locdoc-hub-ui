@@ -141,6 +141,8 @@ const STYLES = styles(`
   .record-id { font-size: 12px; font-weight: 700; color: var(--gray-900); border-bottom: 1.5px dotted var(--gray-400); cursor: pointer; }
   .record-id:hover { color: var(--primary-dk); border-bottom-color: var(--primary-dk); }
   .link-sm { background: none; border: none; color: var(--primary-dk); font-weight: 600; font-size: 11px; cursor: pointer; text-decoration: underline; }
+  .link-sm.danger { color: #b91c1c; }
+  .extra-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 6px; }
   .manual-entry { display: flex; gap: 6px; margin-top: 8px; margin-left: 0; }
   .manual-entry input { flex: 1; padding: 6px 8px; font-size: 12px; }
   .emp .actions { display: flex; gap: 8px; }
@@ -256,6 +258,16 @@ class EmployeeLifecycle extends HTMLElement {
     this._savingEdit = false;
     if (p.ok && p.employee) {
       const updated = p.employee;
+      // Every backend action method returns the raw wixData.update() result, which carries
+      // `steps` as the JSON TEXT field it actually is in the CMS — unlike searchEmployees, which
+      // parses it server-side. Merging the raw string in here made every step on the card read as
+      // empty right after ANY action (string indexing by key just returns undefined), which looked
+      // exactly like "the action did nothing" or "wiped everything" until the next full search
+      // re-fetched properly-parsed data. This is very likely the actual root cause of the original
+      // "I have to keep refreshing" complaint that led to the Reload button in the first place.
+      if (updated && typeof updated.steps === 'string') {
+        try { updated.steps = JSON.parse(updated.steps) || {}; } catch (e) { updated.steps = {}; }
+      }
       const i = this._items.findIndex((e) => e._id === updated._id);
       if (i >= 0) this._items[i] = updated;
       this._msg = { ok: true, text: 'Saved.' };
@@ -663,8 +675,8 @@ class EmployeeLifecycle extends HTMLElement {
       // an admin a safe way to clear it themselves instead of hand-editing the raw steps JSON in
       // the CMS, which risks wiping every OTHER step's recordId in the same edit.
       const clearStuckBtn = (st.status === 'sent' && !busy)
-        ? `<button type="button" class="link-sm" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
-      return this._rowShell(label, `${when}${errTxt}`, control, `${manualToggleBtn}${manualRow}${clearStuckBtn}`);
+        ? `<button type="button" class="link-sm danger" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
+      return this._rowShell(label, `${when}${errTxt}`, control, `<div class="extra-actions">${manualToggleBtn}${manualRow}${clearStuckBtn}</div>`);
     }
 
     // Archived employee.
@@ -691,9 +703,9 @@ class EmployeeLifecycle extends HTMLElement {
     }
     const manualToggleBtn = `<button type="button" class="link-sm" data-mark-archived data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Mark archived manually</button>`;
     const clearStuckBtn = (st.status === 'sent' && !busy)
-      ? `<button type="button" class="link-sm" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
+      ? `<button type="button" class="link-sm danger" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
     const idNote = st.recordId ? `${idChip(st.recordId)} — ` : '';
-    return this._rowShell(label, `${idNote}${when}${errTxt}`, control, `${manualToggleBtn}${clearStuckBtn}`);
+    return this._rowShell(label, `${idNote}${when}${errTxt}`, control, `<div class="extra-actions">${manualToggleBtn}${clearStuckBtn}</div>`);
   }
 
   _rowShell(label, meta, control, extraLine) {
