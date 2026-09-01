@@ -64,13 +64,14 @@ const RESOURCE_STEPS = [
   { key: 'googleWorkspace', label: 'Google Workspace user', manual: false, offboardable: true },
   { key: 'omsContact', label: 'OMS contact', manual: false, offboardable: true },
   { key: 'omsTechnician', label: 'OMS technician', manual: false, offboardable: false },
-  { key: 'vcfCard', label: 'vCard emailed to team', offboardLabel: 'Removal email sent to team', manual: true, offboardable: true },
+  { key: 'vcfCard', label: 'vCard emailed to team', offboardLabel: 'Removal email sent to team', manual: false, offboardable: true },
 ];
 const STANDALONE_OFFBOARD_STEPS = [
   { key: 'dataExportConfirmed', label: 'Data export confirmed', manual: true },
 ];
-// NOT a lifecycle step — just Employees.vehicleNumber, shown read-only here for visibility
-// (edited via the Edit form's Van # field, not via any step action).
+// NOT a real resource step (no RESOURCE_STEPS entry, no automation, no offboard half) — see
+// _vehicleRow()'s comment for why. Styled to look like one for consistency; editable inline
+// (writes Employees.vehicleNumber via update-info) or via the Edit form's Van # field.
 
 // Mirrors backend/employeeLifecycle.web.js's EDITABLE_FIELDS.
 const EDIT_FIELDS = [
@@ -335,8 +336,17 @@ class EmployeeLifecycle extends HTMLElement {
 
   _saveManualId(employeeId, stepKey) {
     const value = (this._manualValue || '').trim();
-    if (!value) { this._msg = { ok: false, text: 'Enter a record ID.' }; return this._render(); }
+    if (!value) { this._msg = { ok: false, text: 'Enter a value.' }; return this._render(); }
     this._msg = null;
+    // Vehicle Number isn't a real resource step (no automation exists or is wanted — per Levi,
+    // 2026-08-27, "the van number IS the assigned portion," fleet software owns everything else)
+    // — it's a plain Employees field that just LOOKS like a step's ID for consistency. So this one
+    // case writes through update-info instead of set-record-id, keeping Employees.vehicleNumber as
+    // the single source of truth rather than duplicating it into steps.vehicleNumber.recordId.
+    if (stepKey === 'vehicleNumber') {
+      this.dispatchEvent(new CustomEvent('update-info', { detail: { employeeId, patch: { vehicleNumber: value } }, bubbles: true, composed: true }));
+      return;
+    }
     this.dispatchEvent(new CustomEvent('set-record-id', { detail: { employeeId, stepKey, recordId: value }, bubbles: true, composed: true }));
   }
 
@@ -496,14 +506,30 @@ class EmployeeLifecycle extends HTMLElement {
     </div>`;
   }
 
-  // Not a lifecycle step — just Employees.vehicleNumber, read-only here (edited via the Edit
-  // form's Van # field).
+  // Not a real resource step — no automation exists or is wanted here (per Levi, 2026-08-27: the
+  // van number itself IS the "assigned" signal; actual vehicle assignment/tracking lives entirely
+  // in separate fleet software, this app just records the number). Styled and behaves like an
+  // ID-tracked step for consistency (click-to-copy once set, inline "enter it" when not) — but the
+  // value is Employees.vehicleNumber directly, not steps.vehicleNumber.recordId, and there's no
+  // Run button because there's nothing to automate. No offboarding half either, for the same
+  // reason (fleet software owns that transition, not this panel).
   _vehicleRow(e) {
     const val = (e.vehicleNumber || '').trim();
-    const control = val
-      ? `<span class="record-id" data-copy-id="${esc(val)}" title="Click to copy">${esc(val)}</span>`
-      : `<span class="step-chip na">Not set</span>`;
-    return this._rowShell('Vehicle Number', '', control);
+    const manualKey = `${e._id}:vehicleNumber`;
+    const manualOpen = this._manualOpenKey === manualKey;
+    if (val) {
+      return this._rowShell('Vehicle Number', '', `<span class="record-id" data-copy-id="${esc(val)}" title="Click to copy">${esc(val)}</span>`);
+    }
+    const control = manualOpen
+      ? `<button class="btn ghost sm" data-manual-toggle data-emp="${esc(e._id)}" data-step="vehicleNumber">Cancel</button>`
+      : `<button class="btn ghost sm" data-manual-toggle data-emp="${esc(e._id)}" data-step="vehicleNumber">Enter number</button>`;
+    const manualRow = manualOpen
+      ? `<div class="manual-entry">
+          <input type="text" placeholder="Van #" data-manual-input value="${esc(this._manualValue)}">
+          <button class="btn sm" data-manual-save data-emp="${esc(e._id)}" data-step="vehicleNumber">Save</button>
+        </div>`
+      : '';
+    return this._rowShell('Vehicle Number', '', control, manualRow);
   }
 
   _editForm(e) {
@@ -557,15 +583,20 @@ class EmployeeLifecycle extends HTMLElement {
     }
 
     // ---- Resource step ----
+    // Same offboardLabel swap as the manual dual-phase branch above — a resource step that's
+    // offboardable can be a genuinely different action once archived (e.g. vcfCard: "email the
+    // vCard" on the way in, "email the team to remove them" on the way out), not just a teardown
+    // of the same thing.
+    const label = !active && step.offboardLabel ? step.offboardLabel : step.label;
     if (active) {
       // Create half.
       if (st.recordId) {
         const by = st.recordSetBy === 'manual' ? ' (entered manually)' : '';
-        return this._rowShell(step.label, `${idChip(st.recordId)}${by}`, `<span class="step-chip done">✓ Done</span>`);
+        return this._rowShell(label, `${idChip(st.recordId)}${by}`, `<span class="step-chip done">✓ Done</span>`);
       }
       if (st.status === 'done') {
         // Legacy completion, from before this rework — no ID to show, still counts as done.
-        return this._rowShell(step.label, '', `<span class="step-chip done">Done</span>`);
+        return this._rowShell(label, '', `<span class="step-chip done">Done</span>`);
       }
       const when = st.at ? `<span class="when">${esc(fmt(st.at))}</span>` : '';
       const errTxt = st.status === 'error' && st.error ? `<span class="when">${esc(st.error)}</span>` : '';
@@ -581,21 +612,21 @@ class EmployeeLifecycle extends HTMLElement {
           <input type="text" placeholder="Record ID" data-manual-input value="${esc(this._manualValue)}">
           <button type="button" class="btn ghost sm" data-manual-save data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Save</button>
         </div>` : '';
-      return this._rowShell(step.label, `${when}${errTxt}`, control, `${manualToggleBtn}${manualRow}`);
+      return this._rowShell(label, `${when}${errTxt}`, control, `${manualToggleBtn}${manualRow}`);
     }
 
     // Archived employee.
     if (!step.offboardable) {
       // No teardown half — just show whatever ID it has on file, nothing to do.
-      return this._rowShell(step.label, st.recordId ? idChip(st.recordId) : '<span class="empty" style="padding:0">no record on file</span>', '');
+      return this._rowShell(label, st.recordId ? idChip(st.recordId) : '<span class="empty" style="padding:0">no record on file</span>', '');
     }
     if (st.archivedAt) {
       const by = st.archivedBy === 'manual' ? ' (marked manually)' : '';
       const idNote = st.recordId ? ` — ${idChip(st.recordId)}` : '';
-      return this._rowShell(step.label, `Archived ${esc(fmtDate(st.archivedAt))}${by}${idNote}`, `<span class="step-chip archived">✓ Archived</span>`);
+      return this._rowShell(label, `Archived ${esc(fmtDate(st.archivedAt))}${by}${idNote}`, `<span class="step-chip archived">✓ Archived</span>`);
     }
     if (st.status === 'done') {
-      return this._rowShell(step.label, '', `<span class="step-chip done">Done</span>`);
+      return this._rowShell(label, '', `<span class="step-chip done">Done</span>`);
     }
     const when = st.at ? `<span class="when">${esc(fmt(st.at))}</span>` : '';
     const errTxt = st.status === 'error' && st.error ? `<span class="when">${esc(st.error)}</span>` : '';
@@ -608,7 +639,7 @@ class EmployeeLifecycle extends HTMLElement {
     }
     const manualToggleBtn = `<button type="button" class="link-sm" data-mark-archived data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Mark archived manually</button>`;
     const idNote = st.recordId ? `${idChip(st.recordId)} — ` : '';
-    return this._rowShell(step.label, `${idNote}${when}${errTxt}`, control, manualToggleBtn);
+    return this._rowShell(label, `${idNote}${when}${errTxt}`, control, manualToggleBtn);
   }
 
   _rowShell(label, meta, control, extraLine) {
