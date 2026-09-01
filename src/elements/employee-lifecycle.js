@@ -18,6 +18,15 @@
  * `status:'done'` (before this rework, no recordId) still shows as done — no regression, it just
  * won't have a copyable ID until n8n is updated to send one (that update is outside this repo).
  *
+ * STUCK AT 'sent' (2026-09-01): a step whose trigger succeeded but whose callback never landed
+ * (site down, secret rotated, etc.) shows a direct Retry button, same as an 'error' step — the
+ * backend's own guard (isStepDone) never actually required clearing anything first, that was
+ * purely a UI choice. (An earlier "Stuck? Clear it" that deleted the entry before allowing a
+ * re-run was tried and removed the same day — redundant once Retry exists directly, and it
+ * confusingly looked like a no-op since re-running from 'sent' just produces a new 'sent'.) An
+ * admin who instead knows the real external ID can still use "Enter ID manually" directly on a
+ * 'sent' step — its own guard only blocks once a real recordId already exists.
+ *
  * `wixMember` and `loyaltyAccount` (added 2026-08-27, per Levi) look and behave exactly like
  * every other resource step here — the element doesn't know or care that they resolve via a
  * direct Wix API call in employeeLifecycle.web.js instead of an n8n webhook (`direct: true` in
@@ -49,7 +58,6 @@
  *                       'mark-manual'       { employeeId, stepKey, done }
  *                       'set-record-id'     { employeeId, stepKey, recordId }
  *                       'mark-archived'     { employeeId, stepKey }
- *                       'clear-stuck-step'  { employeeId, stepKey }
  *                       'archive-employee'  { employeeId }
  *                       'restore-employee'  { employeeId }
  *                       'update-info'       { employeeId, patch }
@@ -141,7 +149,6 @@ const STYLES = styles(`
   .record-id { font-size: 12px; font-weight: 700; color: var(--gray-900); border-bottom: 1.5px dotted var(--gray-400); cursor: pointer; }
   .record-id:hover { color: var(--primary-dk); border-bottom-color: var(--primary-dk); }
   .link-sm { background: none; border: none; color: var(--primary-dk); font-weight: 600; font-size: 11px; cursor: pointer; text-decoration: underline; }
-  .link-sm.danger { color: #b91c1c; }
   .extra-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 6px; }
   .manual-entry { display: flex; gap: 6px; margin-top: 8px; margin-left: 0; }
   .manual-entry input { flex: 1; padding: 6px 8px; font-size: 12px; }
@@ -225,11 +232,16 @@ class EmployeeLifecycle extends HTMLElement {
     if (this._reloadingId) {
       // A per-card reload searched by that one employee's email behind the scenes — splice just
       // that row back in rather than replacing the whole list (which would wipe out an unrelated
-      // search someone already had on screen).
+      // search someone already had on screen). Explicit confirmation message either way (matching
+      // every other action's "Saved." banner) so it's never ambiguous whether the click did
+      // anything — the data itself may be genuinely unchanged, but the click should never be.
       const updated = items.find((it) => it._id === this._reloadingId);
       if (updated) {
         const i = this._items.findIndex((it) => it._id === this._reloadingId);
         if (i >= 0) this._items[i] = updated; else this._items.unshift(updated);
+        this._msg = { ok: true, text: 'Refreshed.' };
+      } else {
+        this._msg = { ok: false, text: 'Could not find this employee on refresh.' };
       }
       this._reloadingId = null;
     } else {
@@ -309,8 +321,6 @@ class EmployeeLifecycle extends HTMLElement {
       if (manualSave) return this._saveManualId(manualSave.getAttribute('data-emp'), manualSave.getAttribute('data-step'));
       const markArchived = e.target.closest('[data-mark-archived]');
       if (markArchived) return this._markArchivedManually(markArchived.getAttribute('data-emp'), markArchived.getAttribute('data-step'));
-      const clearStuck = e.target.closest('[data-clear-stuck]');
-      if (clearStuck) return this._clearStuckStep(clearStuck.getAttribute('data-emp'), clearStuck.getAttribute('data-step'));
       const archive = e.target.closest('[data-archive]');
       if (archive) return this._archive(archive.getAttribute('data-archive'));
       const restore = e.target.closest('[data-restore]');
@@ -402,14 +412,6 @@ class EmployeeLifecycle extends HTMLElement {
   _markArchivedManually(employeeId, stepKey) {
     this._msg = null;
     this.dispatchEvent(new CustomEvent('mark-archived', { detail: { employeeId, stepKey }, bubbles: true, composed: true }));
-  }
-
-  // Recover a step stuck at 'sent' (the automation fired but its callback never landed) — see
-  // clearStuckStep's header comment (employeeLifecycle.web.js) for why this exists instead of
-  // hand-editing the raw steps JSON in the CMS.
-  _clearStuckStep(employeeId, stepKey) {
-    this._msg = null;
-    this.dispatchEvent(new CustomEvent('clear-stuck-step', { detail: { employeeId, stepKey }, bubbles: true, composed: true }));
   }
 
   _archive(employeeId) {
@@ -552,7 +554,7 @@ class EmployeeLifecycle extends HTMLElement {
           ${meta ? `<div class="meta">${meta}</div>` : ''}
         </div>
         <div class="lifecycle-actions">
-          <button class="btn ghost sm" data-reload="${esc(e._id)}" title="Reload this card" ${this._reloadingId === e._id ? 'disabled' : ''}>${this._reloadingId === e._id ? '…' : '⟳'}</button>
+          <button class="btn ghost sm" data-reload="${esc(e._id)}" ${this._reloadingId === e._id ? 'disabled' : ''}>${this._reloadingId === e._id ? '…' : 'Refresh'}</button>
           ${active
             ? `<button class="btn danger sm ${lcBusy ? 'is-loading' : ''}" data-archive="${esc(e._id)}" ${lcBusy ? 'disabled' : ''}>${lcBusy ? '…' : 'Archive'}</button>`
             : `<button class="btn ghost sm ${lcBusy ? 'is-loading' : ''}" data-restore="${esc(e._id)}" ${lcBusy ? 'disabled' : ''}>${lcBusy ? '…' : 'Restore'}</button>`}
@@ -659,8 +661,14 @@ class EmployeeLifecycle extends HTMLElement {
       const when = st.at ? `<span class="when">${esc(fmt(st.at))}</span>` : '';
       const errTxt = st.status === 'error' && st.error ? `<span class="when">${esc(st.error)}</span>` : '';
       let control;
-      if (st.status === 'sent' || busy) {
-        control = `<span class="step-chip sent">${busy ? '…' : 'Sent'}</span>`;
+      if (busy) {
+        control = `<span class="step-chip sent">…</span>`;
+      } else if (st.status === 'sent') {
+        // Stuck at 'sent' (trigger succeeded, its callback never landed) is NOT "done" — the
+        // backend's own guard (isStepDone) never blocked re-running from here, only the UI used
+        // to hide the button behind a static "Sent" chip. Retry re-fires the same automation
+        // directly (per Levi, 2026-09-01 — no separate "clear it first" dance needed for this).
+        control = `<button class="step-chip pending" data-step="${esc(step.key)}" data-emp="${esc(e._id)}">Retry</button>`;
       } else {
         control = `<button class="step-chip ${st.status === 'error' ? 'error' : 'pending'}" data-step="${esc(step.key)}" data-emp="${esc(e._id)}">
           ${st.status === 'error' ? 'Retry' : 'Run'}</button>`;
@@ -670,13 +678,7 @@ class EmployeeLifecycle extends HTMLElement {
           <input type="text" placeholder="Record ID" data-manual-input value="${esc(this._manualValue)}">
           <button type="button" class="btn ghost sm" data-manual-save data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Save</button>
         </div>` : '';
-      // Stuck at 'sent': the trigger succeeded but its callback never landed (site down, secret
-      // rotated, etc.) — no auto-retry (deliberate, see clearStuckStep's header), but this gives
-      // an admin a safe way to clear it themselves instead of hand-editing the raw steps JSON in
-      // the CMS, which risks wiping every OTHER step's recordId in the same edit.
-      const clearStuckBtn = (st.status === 'sent' && !busy)
-        ? `<button type="button" class="link-sm danger" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
-      return this._rowShell(label, `${when}${errTxt}`, control, `<div class="extra-actions">${manualToggleBtn}${manualRow}${clearStuckBtn}</div>`);
+      return this._rowShell(label, `${when}${errTxt}`, control, `<div class="extra-actions">${manualToggleBtn}${manualRow}</div>`);
     }
 
     // Archived employee.
@@ -695,17 +697,17 @@ class EmployeeLifecycle extends HTMLElement {
     const when = st.at ? `<span class="when">${esc(fmt(st.at))}</span>` : '';
     const errTxt = st.status === 'error' && st.error ? `<span class="when">${esc(st.error)}</span>` : '';
     let control;
-    if (st.status === 'sent' || busy) {
-      control = `<span class="step-chip sent">${busy ? '…' : 'Sent'}</span>`;
+    if (busy) {
+      control = `<span class="step-chip sent">…</span>`;
+    } else if (st.status === 'sent') {
+      control = `<button class="step-chip pending" data-step="${esc(step.key)}" data-emp="${esc(e._id)}">Retry</button>`;
     } else {
       control = `<button class="step-chip ${st.status === 'error' ? 'error' : 'pending'}" data-step="${esc(step.key)}" data-emp="${esc(e._id)}">
         ${st.status === 'error' ? 'Retry' : 'Run'}</button>`;
     }
     const manualToggleBtn = `<button type="button" class="link-sm" data-mark-archived data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Mark archived manually</button>`;
-    const clearStuckBtn = (st.status === 'sent' && !busy)
-      ? `<button type="button" class="link-sm danger" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
     const idNote = st.recordId ? `${idChip(st.recordId)} — ` : '';
-    return this._rowShell(label, `${idNote}${when}${errTxt}`, control, `<div class="extra-actions">${manualToggleBtn}${clearStuckBtn}</div>`);
+    return this._rowShell(label, `${idNote}${when}${errTxt}`, control, `<div class="extra-actions">${manualToggleBtn}</div>`);
   }
 
   _rowShell(label, meta, control, extraLine) {
