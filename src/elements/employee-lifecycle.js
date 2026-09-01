@@ -49,6 +49,7 @@
  *                       'mark-manual'       { employeeId, stepKey, done }
  *                       'set-record-id'     { employeeId, stepKey, recordId }
  *                       'mark-archived'     { employeeId, stepKey }
+ *                       'clear-stuck-step'  { employeeId, stepKey }
  *                       'archive-employee'  { employeeId }
  *                       'restore-employee'  { employeeId }
  *                       'update-info'       { employeeId, patch }
@@ -296,6 +297,8 @@ class EmployeeLifecycle extends HTMLElement {
       if (manualSave) return this._saveManualId(manualSave.getAttribute('data-emp'), manualSave.getAttribute('data-step'));
       const markArchived = e.target.closest('[data-mark-archived]');
       if (markArchived) return this._markArchivedManually(markArchived.getAttribute('data-emp'), markArchived.getAttribute('data-step'));
+      const clearStuck = e.target.closest('[data-clear-stuck]');
+      if (clearStuck) return this._clearStuckStep(clearStuck.getAttribute('data-emp'), clearStuck.getAttribute('data-step'));
       const archive = e.target.closest('[data-archive]');
       if (archive) return this._archive(archive.getAttribute('data-archive'));
       const restore = e.target.closest('[data-restore]');
@@ -387,6 +390,14 @@ class EmployeeLifecycle extends HTMLElement {
   _markArchivedManually(employeeId, stepKey) {
     this._msg = null;
     this.dispatchEvent(new CustomEvent('mark-archived', { detail: { employeeId, stepKey }, bubbles: true, composed: true }));
+  }
+
+  // Recover a step stuck at 'sent' (the automation fired but its callback never landed) — see
+  // clearStuckStep's header comment (employeeLifecycle.web.js) for why this exists instead of
+  // hand-editing the raw steps JSON in the CMS.
+  _clearStuckStep(employeeId, stepKey) {
+    this._msg = null;
+    this.dispatchEvent(new CustomEvent('clear-stuck-step', { detail: { employeeId, stepKey }, bubbles: true, composed: true }));
   }
 
   _archive(employeeId) {
@@ -647,7 +658,13 @@ class EmployeeLifecycle extends HTMLElement {
           <input type="text" placeholder="Record ID" data-manual-input value="${esc(this._manualValue)}">
           <button type="button" class="btn ghost sm" data-manual-save data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Save</button>
         </div>` : '';
-      return this._rowShell(label, `${when}${errTxt}`, control, `${manualToggleBtn}${manualRow}`);
+      // Stuck at 'sent': the trigger succeeded but its callback never landed (site down, secret
+      // rotated, etc.) — no auto-retry (deliberate, see clearStuckStep's header), but this gives
+      // an admin a safe way to clear it themselves instead of hand-editing the raw steps JSON in
+      // the CMS, which risks wiping every OTHER step's recordId in the same edit.
+      const clearStuckBtn = (st.status === 'sent' && !busy)
+        ? `<button type="button" class="link-sm" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
+      return this._rowShell(label, `${when}${errTxt}`, control, `${manualToggleBtn}${manualRow}${clearStuckBtn}`);
     }
 
     // Archived employee.
@@ -673,8 +690,10 @@ class EmployeeLifecycle extends HTMLElement {
         ${st.status === 'error' ? 'Retry' : 'Run'}</button>`;
     }
     const manualToggleBtn = `<button type="button" class="link-sm" data-mark-archived data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Mark archived manually</button>`;
+    const clearStuckBtn = (st.status === 'sent' && !busy)
+      ? `<button type="button" class="link-sm" data-clear-stuck data-emp="${esc(e._id)}" data-step="${esc(step.key)}">Stuck? Clear it</button>` : '';
     const idNote = st.recordId ? `${idChip(st.recordId)} — ` : '';
-    return this._rowShell(label, `${idNote}${when}${errTxt}`, control, manualToggleBtn);
+    return this._rowShell(label, `${idNote}${when}${errTxt}`, control, `${manualToggleBtn}${clearStuckBtn}`);
   }
 
   _rowShell(label, meta, control, extraLine) {
