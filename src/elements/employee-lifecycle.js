@@ -18,6 +18,12 @@
  * `status:'done'` (before this rework, no recordId) still shows as done — no regression, it just
  * won't have a copyable ID until n8n is updated to send one (that update is outside this repo).
  *
+ * `wixMember` and `loyaltyAccount` (added 2026-08-27, per Levi) look and behave exactly like
+ * every other resource step here — the element doesn't know or care that they resolve via a
+ * direct Wix API call in employeeLifecycle.web.js instead of an n8n webhook (`direct: true` in
+ * RESOURCE_STEPS, backend-only). Hub access is gated on being a real Wix Member, which is why
+ * this exists at all — not every field here needs an external system to "automate."
+ *
  * ACTIVE STATE (same archive-not-delete pattern as Fleet Management): Archive flips `active:
  * false` immediately — the FIRST offboarding action, not a result of finishing it. That flag
  * decides which mode a resource's row is in: Active → its onboarding/create half; Archived → its
@@ -61,6 +67,8 @@ import { styles, ensureMaterialSymbols } from './tokens.js';
 
 // Mirrors backend/lifecycleSteps.js — keep the two in sync if steps change.
 const RESOURCE_STEPS = [
+  { key: 'wixMember', label: 'Wix Member account', manual: false, offboardable: true, direct: true },
+  { key: 'loyaltyAccount', label: 'Loyalty account (uniform points)', manual: false, offboardable: false, direct: true },
   { key: 'googleWorkspace', label: 'Google Workspace user', manual: false, offboardable: true },
   { key: 'omsContact', label: 'OMS contact', manual: false, offboardable: true },
   { key: 'omsTechnician', label: 'OMS technician', manual: false, offboardable: false },
