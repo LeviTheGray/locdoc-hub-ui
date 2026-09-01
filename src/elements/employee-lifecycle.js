@@ -23,8 +23,14 @@
  * decides which mode a resource's row is in: Active → its onboarding/create half; Archived → its
  * offboarding/archive half (or, if it's not offboardable, just a read-only look at its ID).
  *
+ * DRAFT AUTOSAVE (added 2026-08-27, per code review — this element had the same in-memory-only
+ * draft bug Tech Spotlight was fixed for on 2026-07-29): the "Add a new employee" form debounce-
+ * saves to the backend (`saveOnboardingDraft`, one draft per admin) 2s after typing stops, and
+ * pre-fills from `init-data`'s `draft` on load — so a refresh/crash/accidental-navigation while
+ * filling out a new hire doesn't lose everything typed. Cleared server-side once Create succeeds.
+ *
  * Data handoff (mirrors tech-spotlight-submit):
- *   • Velo → element :  init-data      { admin } | { error }
+ *   • Velo → element :  init-data      { admin, draft } | { error }
  *                       search-result  { items:[{ _id, firstName, lastName, email, title, manager,
  *                                        department, vehicleNumber, bonusOptOut,
  *                                        startDate, active,
@@ -41,6 +47,7 @@
  *                       'restore-employee'  { employeeId }
  *                       'update-info'       { employeeId, patch }
  *                       'submit-and-onboard'{ firstName, lastName, email, title, manager, vehicleNumber }
+ *                       'save-draft'        { firstName, lastName, email, title, manager, vehicleNumber }
  *                       'navigate'          { key }
  *
  * The backend re-checks authorization and step/active preconditions on every method, so a
@@ -168,6 +175,7 @@ class EmployeeLifecycle extends HTMLElement {
     this._msg = null;          // { ok, text } banner
     this._creating = false;
     this._draft = {};          // create-form fields kept across re-renders
+    this._draftTimer = null;   // debounce handle for autosaving _draft to the backend
     this._editingId = null;    // employeeId with the edit form open
     this._editDraft = {};      // that employee's in-progress edits
     this._savingEdit = false;
@@ -196,6 +204,15 @@ class EmployeeLifecycle extends HTMLElement {
     this._admin = Boolean(p.admin);
     this._error = p.error || null;
     this._loaded = true;
+    // Pre-fill the create form from a previously autosaved draft, if this admin has one in
+    // progress (see this file's header comment).
+    if (p.draft && typeof p.draft === 'object') {
+      this._draft = {
+        firstName: p.draft.firstName || '', lastName: p.draft.lastName || '',
+        email: p.draft.email || '', title: p.draft.title || '',
+        manager: p.draft.manager || '', vehicleNumber: p.draft.vehicleNumber || '',
+      };
+    }
     this._render();
   }
 
@@ -225,6 +242,7 @@ class EmployeeLifecycle extends HTMLElement {
       if (this._creating) {
         this._creating = false;
         this._draft = {};
+        if (this._draftTimer) { clearTimeout(this._draftTimer); this._draftTimer = null; } // don't resurrect the just-cleared draft with a stale queued save
         this._searched = true;
         if (!this._items.some((e) => e._id === updated._id)) this._items.unshift(updated);
       }
@@ -281,11 +299,20 @@ class EmployeeLifecycle extends HTMLElement {
     });
     this.shadowRoot.addEventListener('input', (e) => {
       const k = e.target && e.target.getAttribute && e.target.getAttribute('data-field');
-      if (k) this._draft[k] = e.target.value;
+      if (k) { this._draft[k] = e.target.value; this._scheduleDraftSave(); }
       const ef = e.target.closest && e.target.closest('[data-editfield]');
       if (ef && ef.type !== 'checkbox') this._editDraft[ef.getAttribute('data-editfield')] = ef.value;
       if (e.target.getAttribute && e.target.getAttribute('data-manual-input') != null) this._manualValue = e.target.value;
     });
+  }
+
+  // Debounced autosave for the create form — 2s of no typing, same interval Tech Spotlight uses.
+  // Best-effort: dispatched fire-and-forget, a failed autosave shouldn't interrupt anyone typing.
+  _scheduleDraftSave() {
+    if (this._draftTimer) clearTimeout(this._draftTimer);
+    this._draftTimer = setTimeout(() => {
+      this.dispatchEvent(new CustomEvent('save-draft', { detail: { ...this._draft }, bubbles: true, composed: true }));
+    }, 2000);
   }
 
   _$(id) { return this.shadowRoot.getElementById(id); }
