@@ -180,6 +180,7 @@ class EmployeeLifecycle extends HTMLElement {
     this._searched = false;    // has a search run yet?
     this._busyKey = null;      // `${employeeId}:${stepKey}` currently mid-action
     this._lifecycleBusyId = null; // employeeId currently mid archive/restore
+    this._reloadingId = null;  // employeeId currently mid a per-card reload
     this._msg = null;          // { ok, text } banner
     this._creating = false;
     this._draft = {};          // create-form fields kept across re-renders
@@ -217,10 +218,33 @@ class EmployeeLifecycle extends HTMLElement {
   _applySearch(json) {
     let p = {};
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
-    this._items = Array.isArray(p.items) ? p.items : [];
+    const items = Array.isArray(p.items) ? p.items : [];
+    if (this._reloadingId) {
+      // A per-card reload searched by that one employee's email behind the scenes — splice just
+      // that row back in rather than replacing the whole list (which would wipe out an unrelated
+      // search someone already had on screen).
+      const updated = items.find((it) => it._id === this._reloadingId);
+      if (updated) {
+        const i = this._items.findIndex((it) => it._id === this._reloadingId);
+        if (i >= 0) this._items[i] = updated; else this._items.unshift(updated);
+      }
+      this._reloadingId = null;
+    } else {
+      this._items = items;
+    }
     this._searched = true;
     this._busyKey = null;
     this._render();
+  }
+
+  // Reload one card in place — re-searches by that employee's own email so no other rows in the
+  // current list get touched, and the admin doesn't have to re-type their search term.
+  _reloadCard(employeeId) {
+    const emp = this._items.find((e) => e._id === employeeId);
+    if (!emp) return;
+    this._reloadingId = employeeId;
+    this._render();
+    this.dispatchEvent(new CustomEvent('search', { detail: { term: emp.email || employeeId }, bubbles: true, composed: true }));
   }
 
   _applyAction(json) {
@@ -258,6 +282,8 @@ class EmployeeLifecycle extends HTMLElement {
       <main class="main" data-main></main>`;
 
     this.shadowRoot.addEventListener('click', (e) => {
+      const reload = e.target.closest('[data-reload]');
+      if (reload && !reload.disabled) return this._reloadCard(reload.getAttribute('data-reload'));
       const step = e.target.closest('[data-step]');
       if (step && !step.disabled) {
         return this._triggerStep(step.getAttribute('data-emp'), step.getAttribute('data-step'));
@@ -503,6 +529,7 @@ class EmployeeLifecycle extends HTMLElement {
           ${meta ? `<div class="meta">${meta}</div>` : ''}
         </div>
         <div class="lifecycle-actions">
+          <button class="btn ghost sm" data-reload="${esc(e._id)}" title="Reload this card" ${this._reloadingId === e._id ? 'disabled' : ''}>${this._reloadingId === e._id ? '…' : '⟳'}</button>
           ${active
             ? `<button class="btn danger sm ${lcBusy ? 'is-loading' : ''}" data-archive="${esc(e._id)}" ${lcBusy ? 'disabled' : ''}>${lcBusy ? '…' : 'Archive'}</button>`
             : `<button class="btn ghost sm ${lcBusy ? 'is-loading' : ''}" data-restore="${esc(e._id)}" ${lcBusy ? 'disabled' : ''}>${lcBusy ? '…' : 'Restore'}</button>`}
