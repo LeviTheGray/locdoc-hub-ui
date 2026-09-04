@@ -347,10 +347,17 @@ class OneOnOne extends HTMLElement {
     const card = (title, bodyHtml) => `<div class="sub-card"><div class="sc-title">${title}</div>${bodyHtml}</div>`;
     const empty = 'None on file yet.';
     this._$('subGrid').innerHTML = [
+      // Weekly Report is a retaliation-free line straight to Operations/C-Suite: the backend
+      // only ever sends a department manager { weekStart, submitted: true } — no scores, no free
+      // text (see getRecentSubmissions in teamwix-v2/src/backend/scorecard.web.js). `wr.weekHigh`
+      // etc. are only present at all for an Operations/C-Suite viewer, so this renders whichever
+      // shape it got.
       card('📝 Weekly Report', wr
         ? `<div class="sc-line"><strong>Week of:</strong> ${esc(wr.weekStart)}</div>
-           ${wr.weekHigh ? `<div class="sc-line"><strong>High:</strong> ${esc(wr.weekHigh)}</div>` : ''}
-           ${wr.weekLow ? `<div class="sc-line"><strong>Low:</strong> ${esc(wr.weekLow)}</div>` : ''}`
+           ${wr.weekHigh !== undefined || wr.weekLow !== undefined
+              ? `${wr.weekHigh ? `<div class="sc-line"><strong>High:</strong> ${esc(wr.weekHigh)}</div>` : ''}
+                 ${wr.weekLow ? `<div class="sc-line"><strong>Low:</strong> ${esc(wr.weekLow)}</div>` : ''}`
+              : `<div class="sc-empty">✓ Submitted — goes straight to Operations/C-Suite.</div>`}`
         : `<div class="sc-empty">${empty}</div>`),
       card('🤝 Team Assessment', as
         ? `<div class="sc-line"><strong>Avg score:</strong> ${as.avgScore != null ? as.avgScore + ' / 4' : '—'}</div>
