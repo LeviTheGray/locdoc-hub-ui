@@ -514,7 +514,15 @@ class LocDocShop extends HTMLElement {
         it.inseam ? `Inseam ${it.inseam}` : '',
       ].filter(Boolean);
     }
-    return it.size ? [it.size] : [];
+    if (it.size) return [it.size];
+    // Wix Store catalog items (the "uniform" source — WixStoreItems, synced by
+    // wixStoreSyncCore.js / written by shop.web.js's uniform cart path) never have size/hatSize/
+    // pantSize at all: their variant (size, color, whatever the product's options are) is one
+    // joined string, `variantInfo` (e.g. "40 | Grey"). Every branch above falls through for these
+    // rows, so without this they silently showed nothing — not "hidden because empty", genuinely
+    // never read at all (2026-09-11, per Levi: a uniform pants item's size never appeared in the
+    // admin review, confirmed present as "40 | Grey" in the WixStoreItems row itself).
+    return it.variantInfo ? [it.variantInfo] : [];
   }
 
   _adminReview() {
