@@ -496,6 +496,27 @@ class LocDocShop extends HTMLElement {
     return priceLine(line);
   }
 
+  // A line's size-ish fields depend on its type: a hat only ever carries hatSize, a plain item
+  // only ever carries size, but pants carry a waist size (`size`) AND a separate `pantSize` (plus
+  // optionally `inseam`) — the form requires both (see "Enter a size (waist) for pants." /
+  // "Enter pant size." in Shop.awvof.js's validation). The old `it.size || it.hatSize ||
+  // it.pantSize` picked exactly one of the three and silently dropped the rest whenever more than
+  // one was set — for a pants item that meant the pant size an admin actually needed was never
+  // shown, even though it had a value. Used by _adminReview, _copyForEmail, and _cartLine so the
+  // fix applies everywhere a line's size shows up, not just where the complaint came from
+  // (2026-09-10, per Levi: "any options that have a value should be available to see").
+  _sizeBits(it) {
+    if (it.isHat) return it.hatSize ? [it.hatSize] : [];
+    if (it.isPants) {
+      return [
+        it.size ? `Waist ${it.size}` : '',
+        it.pantSize ? `Pant ${it.pantSize}` : '',
+        it.inseam ? `Inseam ${it.inseam}` : '',
+      ].filter(Boolean);
+    }
+    return it.size ? [it.size] : [];
+  }
+
   _adminReview() {
     const { order, items, charged } = this._adminOrder;
     const isSanmar = this._adminSource() === 'sanmar';
@@ -513,7 +534,7 @@ class LocDocShop extends HTMLElement {
       const logoBit = it.logo
         ? `Logo: ${it.logo}${it.logoColor ? ` (${it.logoColor})` : ''}${it.logoPlacement ? ` · ${it.logoPlacement}` : ''}`
         : '';
-      const bits = [it.size || it.hatSize || it.pantSize, it.color, it.width, logoBit, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
+      const bits = [...this._sizeBits(it), it.color, it.width, logoBit, `Qty ${Number(it.quantity) || 1}`].filter(Boolean);
       // Amazon lines have no itemNumber/name — without the link button the admin had no way to see
       // what was actually ordered, so it's required here, not just a nice-to-have.
       const linkBtn = it.link
@@ -706,7 +727,7 @@ class LocDocShop extends HTMLElement {
       const logoBit = it.logo
         ? `Logo: ${it.logo}${it.logoColor ? ` (${it.logoColor})` : ''}${it.logoPlacement ? ` · ${it.logoPlacement}` : ''}`
         : '';
-      const bits = [it.size || it.hatSize || it.pantSize, it.color, it.width, logoBit].filter(Boolean);
+      const bits = [...this._sizeBits(it), it.color, it.width, logoBit].filter(Boolean);
       const desc = bits.length ? `${label} (${bits.join(', ')})` : label;
       const qty = Number(p.quantity) || 1;
       return `${desc} — Qty ${qty} — $${Number(isSanmar ? p.unitPrice : p.unitPrice).toFixed(2)} each — $${p.total.toFixed(2)}`;
@@ -1231,7 +1252,7 @@ class LocDocShop extends HTMLElement {
     const title = l.source === 'uniform' ? (l.name || 'Uniform item')
       : l.source === 'amazon' ? 'Amazon item'
       : `${l.itemNumber || 'Item'}${l.isHat ? ' (Hat)' : l.isPants ? ' (Pants)' : ''}`;
-    const bits = [l.size || l.hatSize || l.pantSize, l.color, `Qty ${p.quantity}`].filter(Boolean);
+    const bits = [...this._sizeBits(l), l.color, `Qty ${p.quantity}`].filter(Boolean);
     return `
       <div class="line">
         <div class="t">
