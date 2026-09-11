@@ -348,16 +348,19 @@ class OneOnOne extends HTMLElement {
     const empty = 'None on file yet.';
     this._$('subGrid').innerHTML = [
       // Weekly Report is a retaliation-free line straight to Operations/C-Suite: the backend
-      // only ever sends a department manager { weekStart, submitted: true } — no scores, no free
-      // text (see getRecentSubmissions in teamwix-v2/src/backend/scorecard.web.js). `wr.weekHigh`
-      // etc. are only present at all for an Operations/C-Suite viewer, so this renders whichever
-      // shape it got.
+      // (getRecentSubmissions in teamwix-v2/src/backend/scorecard.web.js) never sends this page
+      // scores or free text, for ANY viewer — not even Operations/C-Suite. Content lives only in
+      // the Weekly Check tab on Team Reports. This only ever gets a count of this month's
+      // weeks-so-far that were submitted, enough to prompt a manager without exposing what was
+      // said (2026-09-11, per Levi: content had been showing here for Operations viewers, which
+      // was still the wrong place for it).
       card('📝 Weekly Report', wr
-        ? `<div class="sc-line"><strong>Week of:</strong> ${esc(wr.weekStart)}</div>
-           ${wr.weekHigh !== undefined || wr.weekLow !== undefined
-              ? `${wr.weekHigh ? `<div class="sc-line"><strong>High:</strong> ${esc(wr.weekHigh)}</div>` : ''}
-                 ${wr.weekLow ? `<div class="sc-line"><strong>Low:</strong> ${esc(wr.weekLow)}</div>` : ''}`
-              : `<div class="sc-empty">✓ Submitted — goes straight to Operations/C-Suite.</div>`}`
+        ? (wr.expected > 0
+            ? `<div class="sc-line"><strong>${wr.count}/${wr.expected}</strong> submitted this month.</div>
+               <div class="sc-empty">${wr.count < wr.expected
+                  ? 'Answers are private to Operations/C-Suite.'
+                  : '✓ Caught up this month. Answers are private to Operations/C-Suite.'}</div>`
+            : `<div class="sc-empty">No weeks yet this month.</div>`)
         : `<div class="sc-empty">${empty}</div>`),
       card('🤝 Team Assessment', as
         ? `<div class="sc-line"><strong>Avg score:</strong> ${as.avgScore != null ? as.avgScore + ' / 4' : '—'}</div>

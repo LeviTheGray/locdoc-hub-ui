@@ -327,6 +327,13 @@ class HomeLanding extends HTMLElement {
   }
 
   _render() {
+    // attributeChangedCallback can fire before connectedCallback for a freshly-upgraded element
+    // (Wix sets init-data on the element before it's inserted, and a pre-existing observed
+    // attribute triggers attributeChangedCallback during upgrade, ahead of connectedCallback) — in
+    // that case the shell hasn't been painted yet. Render it now instead of crashing on a null
+    // querySelector. Same fix as hub-home.js's _render() (2026-09-11: reported as "Cannot set
+    // properties of null (setting 'textContent')" on this element specifically).
+    if (!this._shell) this._renderShell();
     const root = this.shadowRoot;
     const u = this._user;
     const first = u && (u.firstName || (u.email ? String(u.email).split('@')[0] : ''));

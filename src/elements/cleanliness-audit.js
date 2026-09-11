@@ -202,6 +202,12 @@ class CleanlinessAudit extends HTMLElement {
 
   attributeChangedCallback(name, _old, value) {
     if (!value) return;
+    // Same lifecycle gap as hub-home.js's _render(): attributeChangedCallback can fire before
+    // connectedCallback for a freshly-upgraded element, before the shell (and every _$() id it
+    // defines) has been painted. Every branch below reads/writes the shell via _$(), so guard once
+    // here rather than in each handler (2026-09-11: reported as "Cannot read properties of null
+    // (reading 'style')" on this element).
+    if (!this._shell) this._renderShell();
     if (name === 'init-data') this._applyInit(value);
     if (name === 'photo-result') this._applyPhotoResult(value);
     if (name === 'submit-result') this._applySubmitResult(value);
