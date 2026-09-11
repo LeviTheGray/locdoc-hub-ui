@@ -226,7 +226,15 @@ export function validateLine(line) {
 
   if (source === 'uniform') {
     if (!l.productId) return 'Pick a product.';
-    if (!String(l.size || '').trim()) return 'Select a size.';
+    // Uniform items carry whatever option dimensions the Wix Store product actually defines (Size,
+    // Color, Inseam, whatever) rather than a hardcoded size/color pair — see shop.web.js's
+    // productOptionList. optionLabels is the full list the form asked for; fall back to whatever
+    // keys got selected if it's missing, so an old/cached line doesn't hard-fail validation.
+    const opts = l.selectedOptions || {};
+    const labels = Array.isArray(l.optionLabels) && l.optionLabels.length ? l.optionLabels : Object.keys(opts);
+    if (!labels.length) return 'Select an option.';
+    const missing = labels.find((label) => !String(opts[label] || '').trim());
+    if (missing) return `${missing} is required.`;
     return null;
   }
 

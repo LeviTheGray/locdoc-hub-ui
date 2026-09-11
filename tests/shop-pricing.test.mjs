@@ -144,6 +144,40 @@ test('amazon link must be http(s)', () => {
   assert.equal(validateLine({ source: 'amazon', link: 'https://a.co/x', price: 1, quantity: 1 }), null);
 });
 
+// A uniform line's required fields come from whatever options the Wix Store product actually has
+// (optionLabels, set by the form from the catalog) rather than a hardcoded size/color pair — see
+// shop.web.js's productOptionList. 2026-09-11: a pants product needs both Waist and Inseam, and
+// nothing in validateLine should assume there are exactly one or two of them.
+test('uniform validation checks every option the product actually has, not a hardcoded size/color', () => {
+  assert.equal(validateLine({ source: 'uniform', productId: '' }), 'Pick a product.');
+
+  // A single-option product (just "Size") — the common case, message stays close to the old one.
+  assert.equal(
+    validateLine({ source: 'uniform', productId: 'p1', optionLabels: ['Size'], selectedOptions: {} }),
+    'Size is required.',
+  );
+  assert.equal(
+    validateLine({ source: 'uniform', productId: 'p1', optionLabels: ['Size'], selectedOptions: { Size: 'M' } }),
+    null,
+  );
+
+  // A pants product with two dimensions — both are required, and it reports whichever is missing.
+  assert.equal(
+    validateLine({
+      source: 'uniform', productId: 'p2', optionLabels: ['Waist', 'Inseam'],
+      selectedOptions: { Waist: '40' },
+    }),
+    'Inseam is required.',
+  );
+  assert.equal(
+    validateLine({
+      source: 'uniform', productId: 'p2', optionLabels: ['Waist', 'Inseam'],
+      selectedOptions: { Waist: '40', Inseam: '32' },
+    }),
+    null,
+  );
+});
+
 // --- status contract -------------------------------------------------------
 // n8n automations trigger off these exact strings, and a status missing from the member-visible
 // list makes an order silently DISAPPEAR from the member's page. Both are pinned here on purpose.

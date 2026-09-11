@@ -515,6 +515,15 @@ class LocDocShop extends HTMLElement {
       ].filter(Boolean);
     }
     if (it.size) return [it.size];
+    // Pre-submission cart lines for a uniform item carry `selectedOptions` (built fresh from
+    // whatever the product's real option dimensions are — see _uniformOptionFields), labeled so
+    // "40" always says what it's a measurement OF (2026-09-11, per Levi).
+    if (it.selectedOptions && typeof it.selectedOptions === 'object') {
+      const bits = Object.entries(it.selectedOptions)
+        .filter(([, v]) => v)
+        .map(([label, v]) => `${label}: ${v}`);
+      if (bits.length) return bits;
+    }
     // Wix Store catalog items (the "uniform" source — WixStoreItems, synced by
     // wixStoreSyncCore.js / written by shop.web.js's uniform cart path) never have size/hatSize/
     // pantSize at all: their variant (size, color, whatever the product's options are) is one
@@ -1040,12 +1049,25 @@ class LocDocShop extends HTMLElement {
       </div>
       ${p ? `<div class="sub">
         <div class="grid">
-          ${p.sizes.length ? this._sel_('Size', 'u-size', p.sizes) : this._in('Size', 'u-size')}
-          ${p.colors.length ? this._sel_('Color', 'u-color', p.colors) : this._in('Color', 'u-color')}
+          ${this._uniformOptionFields(p).map((o) => o.choices.length
+            ? this._sel_(o.label, `u-opt-${o.key}`, o.choices)
+            : this._in(o.label, `u-opt-${o.key}`)).join('')}
           ${this._in('Quantity', 'u-qty', 'number', '1')}
         </div>
         ${this._actions()}
       </div>` : '<div class="empty">Pick a product to continue.</div>'}`;
+  }
+
+  // The product's real option dimensions — Size, Color, Inseam, whatever Wix Stores has configured
+  // on it — or, if it genuinely has none, a single free-text "Details" field so a uniform line can
+  // never be added with nothing captured at all (matches the old form, which always asked for at
+  // least a size). Shared by _uniformForm (what to render), _readForm (what to read back) and
+  // _fillForm (what to restore when editing a cart line), so all three always agree on the same
+  // fields (2026-09-11: replaces a hardcoded Size+Color pair that silently dropped any other option
+  // a product had — e.g. a pants product's separate Inseam option — per Levi).
+  _uniformOptionFields(p) {
+    const opts = (p && p.options) || [];
+    return opts.length ? opts : [{ key: 'details', label: 'Details', choices: [] }];
   }
 
   _sanmarForm() {
@@ -1114,9 +1136,12 @@ class LocDocShop extends HTMLElement {
   _readForm() {
     if (this._tab === 'uniform') {
       const p = this._sel || {};
+      const fields = this._uniformOptionFields(p);
+      const selectedOptions = {};
+      fields.forEach((o) => { const v = this._v(`u-opt-${o.key}`); if (v) selectedOptions[o.label] = v; });
       return {
         source: 'uniform', productId: p.productId, name: p.name, unitPrice: Number(p.price) || 0,
-        size: this._v('u-size'), color: this._v('u-color'), quantity: Number(this._v('u-qty')) || 1,
+        selectedOptions, optionLabels: fields.map((o) => o.label), quantity: Number(this._v('u-qty')) || 1,
       };
     }
     if (this._tab === 'amazon') {
@@ -1155,7 +1180,10 @@ class LocDocShop extends HTMLElement {
     if (line.source === 'uniform') {
       this._sel = this._catalog.find((p) => p.productId === line.productId) || null;
       this._renderPanel();
-      set('u-size', line.size); set('u-color', line.color); set('u-qty', line.quantity);
+      const fields = this._uniformOptionFields(this._sel || {});
+      const selected = line.selectedOptions || {};
+      fields.forEach((o) => set(`u-opt-${o.key}`, selected[o.label]));
+      set('u-qty', line.quantity);
     } else if (line.source === 'amazon') {
       set('a-link', line.link); set('a-price', line.price != null ? line.price : line.unitPrice);
       set('a-qty', line.quantity); set('a-color', line.color); set('a-size', line.size); set('a-width', line.width);
