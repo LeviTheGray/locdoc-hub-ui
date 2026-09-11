@@ -153,6 +153,7 @@ class LocDocShop extends HTMLElement {
     this._stockFormOpen = false;
     this._stockLines = [{ description: '', quantity: 1, unitPrice: '', link: '' }];
     this._copyMsg = '';
+    this._notesMsg = ''; // transient "Notes saved." confirmation on the review screen
   }
 
   connectedCallback() {
@@ -345,6 +346,7 @@ class LocDocShop extends HTMLElement {
       this._adminPreview = null;   // a freshly opened order has no pending decision
       this._adminConfirmed = null;
       this._copyMsg = '';
+      this._notesMsg = '';
     } else if (kind === 'preview') {
       // Nothing has been written yet — this is the decision step.
       this._adminPreview = {
@@ -375,6 +377,11 @@ class LocDocShop extends HTMLElement {
       this._stockFormOpen = false;
       this._stockLines = [{ description: '', quantity: 1, unitPrice: '', link: '' }];
       this._adminRefresh();
+    } else if (kind === 'notes') {
+      // Stays on the review screen (unlike status/cancel/confirm) — saving a note isn't a
+      // fulfilment action, there's nothing to refresh the queue for.
+      if (this._adminOrder) this._adminOrder.order.adminNotes = data.adminNotes || '';
+      this._notesMsg = 'Notes saved.';
     }
     this._renderPanel();
   }
@@ -614,7 +621,20 @@ class LocDocShop extends HTMLElement {
       ${this._copyMsg ? `<div class="ok">${this._esc(this._copyMsg)}</div>` : ''}
       ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
 
-      <h2 style="margin-top:8px">Line items</h2>
+      <h2 style="margin-top:8px">Notes</h2>
+      <div class="m" style="color:var(--gray-400);font-size:12px;margin-bottom:6px">
+        Private to shop admins — the member never sees this. Good for anything the order fields
+        don't capture (e.g. the actual waist/length once you know it, for next time).
+      </div>
+      <div class="row">
+        <textarea data-admin-notes rows="3" style="flex:1;resize:vertical">${this._esc(order.adminNotes || '')}</textarea>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:center">
+        <button class="btn" data-admin-savenotes ${this._adminBusy ? 'disabled' : ''}>Save notes</button>
+        ${this._notesMsg ? `<span class="ok">${this._esc(this._notesMsg)}</span>` : ''}
+      </div>
+
+      <h2 style="margin-top:20px">Line items</h2>
       ${lines || '<div class="empty">No line items found for this order.</div>'}
       ${items.length ? totals : ''}
       ${this._adminPreview ? this._adminDecision() : `
@@ -887,6 +907,15 @@ class LocDocShop extends HTMLElement {
       this._adminSend('admin-cancel', {
         orderId: this._adminOrder.order._id,
         reason: reason ? reason.value.trim() : '',
+      });
+    });
+
+    const saveNotes = panel.querySelector('[data-admin-savenotes]');
+    if (saveNotes) saveNotes.addEventListener('click', () => {
+      const notes = panel.querySelector('[data-admin-notes]');
+      this._adminSend('admin-notes', {
+        orderId: this._adminOrder.order._id,
+        notes: notes ? notes.value : '',
       });
     });
 
