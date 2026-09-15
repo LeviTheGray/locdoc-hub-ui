@@ -133,6 +133,8 @@ const STYLES = `
   .btn-primary:hover { background: var(--primary-dk); transform: translateY(-1px); }
   .btn-primary:active { transform: scale(.98); }
   .btn-primary:disabled { background: var(--gray-200); color: var(--gray-400); cursor: default; transform: none; }
+    .admin-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#fffbeb; border:1px solid #fcd34d; color:#92400e; border-radius:10px; padding:12px 16px; margin-bottom:16px; font:600 13px system-ui,-apple-system,sans-serif; }
+  .admin-banner .abtn { background:none; border:none; color:#92400e; font:700 13px inherit; text-decoration:underline; cursor:pointer; padding:0; white-space:nowrap; }
   .submitted-banner { background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
   .submitted-banner .check { width: 36px; height: 36px; border-radius: 50%; background: #059669; color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .submitted-banner .msg { font-size: 14px; font-weight: 600; color: #065f46; }
@@ -193,6 +195,8 @@ class CleanlinessAudit extends HTMLElement {
     this._ptoBusy = false;
     this._ptoErr = '';
     this._editing = false;
+    this._adminMode = false;   // true when Velo loaded another employee's audit for a manager to fix
+    this._adminTargetLabel = '';
   }
 
   connectedCallback() {
@@ -227,6 +231,7 @@ class CleanlinessAudit extends HTMLElement {
       <main class="main">
         <div id="loadingState" class="loading-state">Loading…</div>
         <div id="viewMine" style="display:none">
+          <div id="adminBanner" class="admin-banner" style="display:none"></div>
           <div id="teamPtoSection"></div>
           <div id="submittedView" style="display:none">
             <div class="submitted-banner"><div class="check">&#10003;</div>
@@ -277,6 +282,10 @@ class CleanlinessAudit extends HTMLElement {
         this.dispatchEvent(new CustomEvent('navigate', { detail: { key: 'hub' }, bubbles: true, composed: true }));
         return;
       }
+      if (e.target.closest('[data-action="back-report"]')) {
+        this.dispatchEvent(new CustomEvent('navigate', { detail: { key: 'report' }, bubbles: true, composed: true }));
+        return;
+      }
       if (e.target.closest('[data-action="submit"]')) { this._submit(); return; }
       if (e.target.closest('[data-action="edit-audit"]')) { this._startEdit(); return; }
       if (e.target.closest('[data-action="cancel-edit"]')) { this._cancelEdit(); return; }
@@ -304,6 +313,8 @@ class CleanlinessAudit extends HTMLElement {
     this._existing = p.existingReport || null;
     this._meScope = p.meScope || '';
     this._team = p.team || [];
+    this._adminMode = !!p.adminMode;
+    this._adminTargetLabel = p.adminTargetLabel || '';
     this._active.vehicle = !!(this._user && this._user.vehicleNumber && String(this._user.vehicleNumber).trim());
     this._active.office = !!(this._user && this._user.hasOffice);
     this._vehicleNoun = (this._user && this._user.vehicleNoun) ? String(this._user.vehicleNoun).toLowerCase() : 'vehicle';
@@ -314,10 +325,23 @@ class CleanlinessAudit extends HTMLElement {
   _renderPage() {
     this._$('loadingState').style.display = 'none';
     this._$('viewMine').style.display = '';
+    this._renderAdminBanner();
     this._renderTeamPto();
     if (this._existing) this._showSubmitted(this._existing);
     else if (isAuditLocked(new Date())) this._showLocked();
     else this._showForm();
+  }
+
+  // Fixed reminder banner whenever Velo loaded someone ELSE's audit for a manager to fix (see
+  // adminMode in Cleanliness Audit.vfvl5.js) — without this, the form below looks identical to a
+  // manager's own audit and it would be very easy to fill it in thinking it's your own.
+  _renderAdminBanner() {
+    const el = this._$('adminBanner');
+    if (!this._adminMode) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    const who = this._adminTargetLabel ? esc(this._adminTargetLabel) : 'this employee';
+    el.innerHTML = `<span>&#9998; Editing ${who}&rsquo;s cleanliness audit &mdash; this week only.</span>
+      <button type="button" class="abtn" data-action="back-report">&larr; Back to report</button>`;
   }
 
   // Manager-only: this week's audit-owing roster in the manager's department scope, with a

@@ -97,10 +97,13 @@ const STYLES = `
   .sub-name { font-weight: 600; }
   .sub-types { font-size: 11px; color: var(--gray-400); margin-left: auto; }
   .sub-score { font-weight: 800; font-size: 14px; min-width: 44px; text-align: right; }
+  .fix-link { font-size: 11px; font-weight: 700; color: var(--primary); text-decoration: none; padding: 3px 8px; border: 1px solid var(--primary); border-radius: 100px; flex-shrink: 0; white-space: nowrap; }
+  .fix-link:hover { background: var(--primary); color: #fff; }
   .nonsub-label { font-size: 12px; font-weight: 700; color: #991b1b; margin: 6px 0 8px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 100px; background: #fee2e2; color: #991b1b; display: inline-flex; align-items: center; gap: 5px; }
   .chip .tag { font-size: 10px; font-weight: 700; opacity: .7; }
+  .chip-fix.fix-link { background: #fff; margin-left: 2px; }
   .chip.done { background: #dcfce7; color: #14532d; }
   .all-in { font-size: 13px; color: #14532d; font-weight: 600; }
   .pto-toggle { font-size: 12px; font-weight: 700; border: 1px solid var(--gray-200); background: #fff; color: var(--gray-600); border-radius: 100px; padding: 5px 12px; cursor: pointer; margin-left: auto; }
@@ -366,6 +369,10 @@ class CleanlinessReport extends HTMLElement {
 
   _renderBranches(byEmp, ptoIds) {
     const week = this._selectedWeek();
+    // Editing only ever applies to the current week (the edit page itself only ever knows how
+    // to load/save THIS week's audit — see Cleanliness Audit.vfvl5.js) so the Fix link only shows
+    // there; a manager can't use it to rewrite history on a past week's audit.
+    const canFixThisWeek = week === getAuditWeekStart(new Date());
     const branches = {};
     this._participants.filter(p => !ptoIds.has(p._id)).forEach(p => { const b = branchLabel(p.branch); (branches[b] = branches[b] || []).push(p); });
     const names = Object.keys(branches).sort();
@@ -394,7 +401,9 @@ class CleanlinessReport extends HTMLElement {
       const subList = ranked.length
         ? `<div class="sub-label">Submitted (${ranked.length})</div><div class="sub-list">${ranked.map((s, i) => {
             const types = [s.a.vehicleScore != null ? `🚐 ${s.a.vehicleScore}%` : '', s.a.officeScore != null ? `🏢 ${s.a.officeScore}%` : ''].filter(Boolean).join(' · ');
-            return `<div class="sub-row"><span class="sub-rank">${i + 1}</span><span class="sub-name">${esc(s.m.name)}</span>${types ? `<span class="sub-types">${types}</span>` : ''}<span class="sub-score" style="color:${scoreColor(s.a.score)}">${s.a.score}%</span></div>`;
+            const fix = canFixThisWeek && this._canMarkPto(s.m.department)
+              ? `<a class="fix-link" href="/cleanliness-audit?edit=${encodeURIComponent(s.m._id)}" title="Fix ${esc(s.m.name)}'s audit">Fix</a>` : '';
+            return `<div class="sub-row"><span class="sub-rank">${i + 1}</span><span class="sub-name">${esc(s.m.name)}</span>${types ? `<span class="sub-types">${types}</span>` : ''}<span class="sub-score" style="color:${scoreColor(s.a.score)}">${s.a.score}%</span>${fix}</div>`;
           }).join('')}</div>`
         : '';
 
@@ -403,7 +412,11 @@ class CleanlinessReport extends HTMLElement {
           <div class="typebars">${this._typeBar('🚐 Vehicle', avgOverExpected(vScores, owesV), owesV)}${this._typeBar('🏢 Office', avgOverExpected(oScores, owesO), owesO)}</div>
           ${subList}
           ${nonsubs.length
-            ? `<div class="nonsub-label">Did not submit (${nonsubs.length})</div><div class="chips">${nonsubs.map(m => `<span class="chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? '🚐🏢' : m.owesVehicle ? '🚐' : '🏢'}</span></span>`).join('')}</div>`
+            ? `<div class="nonsub-label">Did not submit (${nonsubs.length})</div><div class="chips">${nonsubs.map(m => {
+                const fix = canFixThisWeek && this._canMarkPto(m.department)
+                  ? `<a class="fix-link chip-fix" href="/cleanliness-audit?edit=${encodeURIComponent(m._id)}" title="Submit for ${esc(m.name)}">Submit for them</a>` : '';
+                return `<span class="chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? '🚐🏢' : m.owesVehicle ? '🚐' : '🏢'}</span>${fix}</span>`;
+              }).join('')}</div>`
             : `<div class="all-in">✓ Everyone in this branch submitted</div>`}
           ${this._renderCommonAreas(b, week)}
         </div>`;
