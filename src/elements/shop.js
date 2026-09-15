@@ -76,6 +76,8 @@ const STYLES = `
 
   .btn { border: none; border-radius: var(--radius-sm); padding: 10px 16px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; background: var(--primary); color: #fff; }
   .btn:hover { background: var(--primary-dk); }
+  .ext-link { display: inline-block; margin: 4px 0 12px; font-size: 13px; font-weight: 700; color: var(--primary); text-decoration: none; }
+  .ext-link:hover { color: var(--primary-dk); text-decoration: underline; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .btn.ghost { background: none; color: var(--primary); border: 1.5px solid var(--gray-200); }
   .row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
@@ -474,13 +476,15 @@ class LocDocShop extends HTMLElement {
   }
 
   // The queue, narrowed by the status filter. "Completed" is treated as "Received" (displayStatus),
-  // so the default "open" view hides both, and selecting Received shows both.
+  // so the default "open" view hides both, and selecting Received shows both. Cancelled is also
+  // excluded from "open" (fixed 2026-09-15 — a cancelled order isn't something still awaiting
+  // receipt, it's done and dead); it has its own selectable filter option, same as any other status.
   _adminFilteredOrders() {
     const f = this._adminFilter || 'open';
     return this._adminOrders.filter((o) => {
       const d = displayStatus(o.status);
       if (f === 'all') return true;
-      if (f === 'open') return d !== STATUS.RECEIVED;
+      if (f === 'open') return d !== STATUS.RECEIVED && d !== STATUS.CANCELLED;
       return d === f;
     });
   }
@@ -1101,6 +1105,7 @@ class LocDocShop extends HTMLElement {
 
   _sanmarForm() {
     return `<h2>SanMar custom item</h2>
+      <a class="ext-link" href="https://www.sanmar.com" target="_blank" rel="noopener noreferrer">Look up items on sanmar.com ↗</a>
       <div class="grid">
         ${this._in('Item number', 's-item')}
         ${this._in('Clothing price ($)', 's-price', 'number')}
