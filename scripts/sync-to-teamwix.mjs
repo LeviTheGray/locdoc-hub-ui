@@ -49,6 +49,7 @@ const ELEMENTS = [
   'core-values-data.js', 'core-values.js', 'resources-hub.js',
   'meetings.js', 'annual-events.js', 'company-holidays.js', 'benefits.js',
   'shop.js', 'employee-lifecycle.js', 'employee-management.js', 'fleet-management.js', 'bonus-calculator.js',
+  'driver-scorecard-upload.js',
 ];
 const targets = [
   { src: 'src/scoring-core.js', to: join(teamwix, 'src', 'backend', 'scoring-core.js'), mode: 'replace' },
