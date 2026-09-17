@@ -45,9 +45,11 @@
  * scratch input in this form — so there's nothing here worth the complexity of a draft store.
  *
  * Data handoff (mirrors tech-spotlight-submit):
- *   • Velo → element :  init-data      { admin } | { error }
+ *   • Velo → element :  init-data      { admin, tools:[{key,label}] } | { error }  — `tools` is the
+ *                       canonical grantable-tools list (toolAccess.js) for the Edit form's
+ *                       checkbox list, only fetched when `admin` is true.
  *                       search-result  { items:[{ _id, firstName, lastName, email, title, manager,
- *                                        department, vehicleNumber, bonusOptOut,
+ *                                        department, vehicleNumber, bonusOptOut, toolAccess:[key],
  *                                        startDate, active,
  *                                        steps:{[key]:{status,at,error?,recordId?,recordSetAt?,
  *                                          recordSetBy?,archivedAt?,archivedBy?}} }] } | { error }
@@ -118,6 +120,8 @@ const STYLES = styles(`
   .row2 { display: flex; gap: 12px; flex-wrap: wrap; } .row2 > div { flex: 1; min-width: 160px; }
   .checkline { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--gray-600); padding: 10px 0; }
   .checkline input { width: 16px; height: 16px; }
+  .tool-access { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-100); }
+  .tool-access .checkline { padding: 6px 0; }
   .searchbar { display: flex; gap: 8px; }
   .searchbar input { flex: 1; }
   .searchbar .btn { flex-shrink: 0; }
@@ -184,6 +188,7 @@ class EmployeeLifecycle extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._admin = false;
+    this._tools = [];          // grantable tools list, from init-data — see toolAccess.js
     this._loaded = false;
     this._error = null;
     this._items = [];          // search results
@@ -220,6 +225,7 @@ class EmployeeLifecycle extends HTMLElement {
     let p = {};
     try { p = JSON.parse(json) || {}; } catch (e) { /* ignore */ }
     this._admin = Boolean(p.admin);
+    this._tools = Array.isArray(p.tools) ? p.tools : [];
     this._error = p.error || null;
     this._loaded = true;
     this._render();
@@ -341,6 +347,13 @@ class EmployeeLifecycle extends HTMLElement {
       if (cb) return this._markManual(cb.getAttribute('data-emp'), cb.getAttribute('data-manual'), cb.checked);
       const ef = e.target.closest('[data-editfield]');
       if (ef && ef.type === 'checkbox') this._editDraft[ef.getAttribute('data-editfield')] = ef.checked;
+      const toolCb = e.target.closest('[data-tool]');
+      if (toolCb) {
+        const key = toolCb.getAttribute('data-tool');
+        const set = new Set(this._editDraft.toolAccess || []);
+        if (toolCb.checked) set.add(key); else set.delete(key);
+        this._editDraft.toolAccess = Array.from(set);
+      }
     });
     this.shadowRoot.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target && e.target.id === 'q') { e.preventDefault(); this._search(); }
@@ -440,6 +453,7 @@ class EmployeeLifecycle extends HTMLElement {
       firstName: e.firstName || '', lastName: e.lastName || '', email: e.email || '',
       title: e.title || '', manager: e.manager || '', department: e.department || '',
       vehicleNumber: e.vehicleNumber || '', bonusOptOut: !!e.bonusOptOut,
+      toolAccess: Array.isArray(e.toolAccess) ? [...e.toolAccess] : [],
     };
     this._msg = null;
     this._render();
@@ -600,9 +614,16 @@ class EmployeeLifecycle extends HTMLElement {
       }
       return `<div><label class="f">${f.label}</label><input type="${f.type}" data-editfield="${f.key}" value="${esc(d[f.key] || '')}"></div>`;
     };
+    const toolsHtml = this._tools.length ? `<div class="tool-access">
+        <label class="f">Tool access</label>
+        ${this._tools.map((t) => `<label class="checkline">
+          <input type="checkbox" data-tool="${esc(t.key)}" ${d.toolAccess.includes(t.key) ? 'checked' : ''}> ${esc(t.label)}
+        </label>`).join('')}
+      </div>` : '';
     return `<div class="edit-form">
       <div class="row2">${EDIT_FIELDS.filter((f) => f.type !== 'checkbox').map(fieldHtml).join('')}</div>
       ${EDIT_FIELDS.filter((f) => f.type === 'checkbox').map(fieldHtml).join('')}
+      ${toolsHtml}
       ${e.startDate ? `<div class="static-note">Start date (not editable here): ${esc(String(e.startDate).slice(0, 10))}</div>` : ''}
       <div style="display:flex;gap:10px;margin-top:14px">
         <button class="btn ${this._savingEdit ? 'is-loading' : ''}" data-save-edit="${esc(e._id)}">
