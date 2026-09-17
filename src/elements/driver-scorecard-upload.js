@@ -19,7 +19,9 @@
  *                       upload-result  { ok:true, weekStart, weekLabel, count, parkedCount } |
  *                                      { ok:false, error }                          (carries _ts)
  *   • element → Velo :  'upload-pdf'  { pdfBase64 }
- *                       'navigate'    { key: 'hub' }
+ *                       'navigate'    { key: 'hub' | 'wednesdayMeeting' }  — the latter is a
+ *                       "View this week's scores →" link to /wednesday-meeting's Driver
+ *                       Scorecard tab (added 2026-09-18, per Levi).
  *
  * The backend re-checks manager status on every call — `canUpload` here only decides what UI to
  * paint.
@@ -114,8 +116,10 @@ class DriverScorecardUpload extends HTMLElement {
 
     this.shadowRoot.addEventListener('click', (e) => {
       if (e.target.closest('[data-upload]')) return this._upload();
-      if (e.target.closest('[data-nav]')) {
-        this.dispatchEvent(new CustomEvent('navigate', { detail: { key: 'hub' }, bubbles: true, composed: true }));
+      const navBtn = e.target.closest('[data-nav]');
+      if (navBtn) {
+        const key = navBtn.getAttribute('data-nav') || 'hub';
+        this.dispatchEvent(new CustomEvent('navigate', { detail: { key }, bubbles: true, composed: true }));
       }
     });
     this.shadowRoot.addEventListener('change', (e) => {
@@ -173,6 +177,7 @@ class DriverScorecardUpload extends HTMLElement {
     const ready = !!this._pdfBase64 && !this._uploading;
     main.innerHTML = `
       ${this._msg ? `<div class="msg ${this._msg.ok ? 'ok' : 'err'}">${esc(this._msg.text)}</div>` : ''}
+      <button class="link" data-nav="wednesdayMeeting" style="margin-top:0">View this week's scores on Wednesday Meeting →</button>
       <div class="section card" style="padding:18px 20px">
         <h2>This week's PDF</h2>
         <div class="drop">

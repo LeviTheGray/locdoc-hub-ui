@@ -26,6 +26,12 @@
  *
  * The element merges page init-data over SAMPLE_DATA, so any unwired tab keeps
  * demo content. Editor: tag `wednesday-meeting`, element ID `wednesdayMeeting`.
+ *
+ * `init-data.canUploadScores` (added 2026-09-18, per Levi): true only for whoever has the
+ * `driverScorecard` toolAccess key (or is a manager) — see backend/driverScorecardUpload.web.js.
+ * Shows an "Upload this week's scores →" link on the Driver Scorecard tab, dispatching
+ * `navigate` { key: 'driverScorecardUpload' } to /driver-scorecard-upload. Purely an affordance;
+ * the actual upload page re-checks authorization itself regardless of who can see this link.
  */
 
 import { TOKENS, ensureMaterialSymbols } from './tokens.js';
@@ -487,6 +493,7 @@ class WednesdayMeeting extends HTMLElement {
     this._shell = false;
     this._cvShowAll = false; // Core Values tab: false = this week's 2 picks, true = all 8
     this._isManager = false;    // from init-data — unlocks the Agenda-tab presentation editor
+    this._canUploadScores = false; // from init-data — unlocks the Driver Scorecard tab's "Upload scores" link
     this._agendaBusy = false;   // saving the agenda link
     this._agendaMsg = null;     // { ok, text } feedback after a save
     this._agendaType = '';      // editor's pending type selection ('slides' | 'external'), unset = follow current link
@@ -511,7 +518,11 @@ class WednesdayMeeting extends HTMLElement {
   _applyData(json) {
     try {
       const p = JSON.parse(json);
-      if (p && typeof p === 'object') { this._data = { ...SAMPLE_DATA, ...p }; this._isManager = Boolean(p.isManager); }
+      if (p && typeof p === 'object') {
+        this._data = { ...SAMPLE_DATA, ...p };
+        this._isManager = Boolean(p.isManager);
+        this._canUploadScores = Boolean(p.canUploadScores);
+      }
     } catch (e) { /* keep sample data */ }
     this._clWeek = null;
     this._render();
@@ -886,6 +897,7 @@ class WednesdayMeeting extends HTMLElement {
       </div>` : '';
     return `
       <div class="panel-sub">${m.dateRange ? 'Week of ' + esc(m.dateRange) : 'Weekly driver safety scores.'}</div>
+      ${this._canUploadScores ? `<div style="margin-top:-8px;margin-bottom:16px"><button class="deck-btn" data-nav="driverScorecardUpload">Upload this week's scores →</button></div>` : ''}
       <div class="drv-top">
         <div class="drv-fleet"><div class="v">${m.fleetScore == null ? '—' : Number(m.fleetScore).toFixed(1)}</div><div class="l">Average Fleet Score</div></div>
         <div class="drv-avgs-row">${avgs}</div>
