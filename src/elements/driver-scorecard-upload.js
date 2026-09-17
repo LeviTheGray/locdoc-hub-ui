@@ -181,7 +181,7 @@ class DriverScorecardUpload extends HTMLElement {
       <div class="section card" style="padding:18px 20px">
         <h2>This week's PDF</h2>
         <div class="drop">
-          <div>Choose the Geotab "Driver Safety Scorecard (Compact)" PDF — the same one you'd normally save each week.</div>
+          <div>Choose the Geotab "Driver Safety Scorecard (Expanded)" PDF — the same one you'd normally save each week.</div>
           <input type="file" accept="application/pdf" data-file>
           ${this._fileName ? `<div class="filename">${esc(this._fileName)}</div>` : ''}
         </div>
