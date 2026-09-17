@@ -184,11 +184,18 @@ function fmtDate(iso) { const d = new Date(iso + 'T00:00:00'); return isNaN(d) ?
 function avg(arr) { return arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null; }
 function avgOverExpected(scores, expected) { return expected ? Math.round(scores.reduce((a, b) => a + b, 0) / expected) : null; }
 function clScoreColor(s) { return s >= 80 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--red)'; }
-// 0–100 red→green scale (matches the PDF's color legend).
+// Matches the PDF's own Classification / Score Range legend exactly (2026-09-18, per Levi — the
+// old 90/75/50/25 breaks were a generic continuous-gradient guess, not the vendor's real numbers):
+// Low Risk >=95, Mild Risk >=75, Medium Risk >=60, High Risk <60. Same 4 bands the "classification"
+// field on each row (Expanded-format rows only, see driverScorecardUpload.web.js) already spells
+// out in words — this just colors the equivalent numeric ranges for tiles/averages that don't
+// carry that field (rule averages have no per-rule classification, only a raw score).
 function drvColor(s) {
   if (s == null) return 'var(--gray-200)';
-  if (s >= 90) return '#16a34a'; if (s >= 75) return '#4ade80';
-  if (s >= 50) return '#facc15'; if (s >= 25) return '#fb923c'; return '#ef4444';
+  if (s >= 95) return '#16a34a';  // Low Risk
+  if (s >= 75) return '#facc15';  // Mild Risk
+  if (s >= 60) return '#fb923c';  // Medium Risk
+  return '#ef4444';               // High Risk
 }
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 // Deterministic pick of 2 distinct core values, seeded by the meeting week so the whole room
@@ -326,8 +333,9 @@ const STYLES = `
   .drv-tile.medal-1 { background:linear-gradient(180deg,#fff8dc,#fff); border-color:#d4af37; box-shadow:0 0 0 1px #d4af37 inset; }
   .drv-tile.medal-2 { background:linear-gradient(180deg,#f5f6f7,#fff); border-color:#a7adb4; box-shadow:0 0 0 1px #a7adb4 inset; }
   .drv-tile.medal-3 { background:linear-gradient(180deg,#fbe8da,#fff); border-color:#b3703f; box-shadow:0 0 0 1px #b3703f inset; }
-  .drv-legend { display:flex; align-items:center; gap:0; margin-top:14px; font-size:11px; color:var(--gray-500); }
-  .drv-legend i { width:38px; height:12px; display:inline-block; }
+  .drv-legend { display:flex; align-items:center; flex-wrap:wrap; gap:14px; margin-top:14px; font-size:11px; color:var(--gray-500); }
+  .drv-legend .sw { display:flex; align-items:center; gap:5px; }
+  .drv-legend i { width:14px; height:14px; border-radius:3px; display:inline-block; }
   .drv-parked-title { font-size:12px; font-weight:700; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; margin-bottom:10px; }
   .drv-parked-list { display:flex; flex-direction:column; gap:4px; }
   .drv-parked-row { display:flex; align-items:center; gap:10px; padding:7px 4px; border-bottom:1px solid var(--gray-100); font-size:calc(13px * var(--fs)); opacity:.75; }
@@ -904,7 +912,12 @@ class WednesdayMeeting extends HTMLElement {
       </div>
       <div class="drv-tiles-card">
         <div class="drv-tiles">${tiles}</div>
-        <div class="drv-legend"><span>0</span><i style="background:#ef4444"></i><i style="background:#fb923c"></i><i style="background:#facc15"></i><i style="background:#4ade80"></i><i style="background:#16a34a"></i><span>100</span></div>
+        <div class="drv-legend">
+          <div class="sw"><i style="background:#ef4444"></i><span>High Risk &lt;60</span></div>
+          <div class="sw"><i style="background:#fb923c"></i><span>Medium Risk 60+</span></div>
+          <div class="sw"><i style="background:#facc15"></i><span>Mild Risk 75+</span></div>
+          <div class="sw"><i style="background:#16a34a"></i><span>Low Risk 95+</span></div>
+        </div>
       </div>
       ${parkedHtml}`;
   }
