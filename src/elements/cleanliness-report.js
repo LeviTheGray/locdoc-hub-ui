@@ -6,7 +6,7 @@
  * See CUSTOM-ELEMENTS.md for the recipe.
  *
  * Data handoff:
- *   • Velo → element :  init-data { scope, meScope, meId, participants, audits } | { error }
+ *   • Velo → element :  init-data { scope, meScope, isCleanlinessAdmin, meId, participants, audits } | { error }
  *                       pto-result { ok, error? }  (carries a _ts nonce; a successful mark/unmark
  *                                    is followed by a fresh init-data with the updated audit rows —
  *                                    this attribute only carries busy/error state)
@@ -23,7 +23,10 @@
  * meScope is the manager's raw Employees.manager value ("" = not a manager, "Operations" = every
  * department, otherwise a comma-separated department list) — it decides which participants the
  * Mark PTO control can act on. It's separate from `scope`, which only controls how much of the
- * report is VISIBLE (any manager sees the whole company).
+ * report is VISIBLE (any manager sees the whole company). isCleanlinessAdmin (toolAccess key
+ * 'cleanlinessAdmin') grants the same company-wide visibility plus Fix/Submit-for links on every
+ * row regardless of department — for someone who needs to edit anyone's audit but has no
+ * `manager` value of their own. The server re-checks this independently on every actual edit.
  *
  * Editor: Add → Embed Code → Custom Element → source = this file,
  * tag name `cleanliness-report`, element ID `cleanlinessReport`.
@@ -220,7 +223,7 @@ class CleanlinessReport extends HTMLElement {
     let p;
     try { p = JSON.parse(json); } catch (e) { p = { error: 'Failed to load.' }; }
     if (p.error) { this._$('loadingState').innerHTML = `<span style="color:#b91c1c">${p.error}</span>`; return; }
-    this._scope = p.scope; this._meScope = p.meScope || ''; this._meId = p.meId;
+    this._scope = p.scope; this._meScope = p.meScope || ''; this._isCleanlinessAdmin = !!p.isCleanlinessAdmin; this._meId = p.meId;
     this._participants = p.participants || []; this._audits = p.audits || [];
     this._commonAreaAudits = p.commonAreaAudits || [];
     this._$('loadingState').style.display = 'none';
@@ -238,6 +241,13 @@ class CleanlinessReport extends HTMLElement {
     const owned = this._meScope.split(',').map(s => s.trim());
     const depts = String(department || '').split(',').map(s => s.trim()).filter(Boolean);
     return depts.some(d => owned.includes(d));
+  }
+
+  // Whether the current viewer can Fix/Submit-for a given department's audit — department scope,
+  // OR the cleanlinessAdmin tool (edit anyone's, regardless of department). Server re-checks this
+  // independently in adminLoadAudit/adminSaveAudit, so a stale client value can't grant a real edit.
+  _canFix(department) {
+    return this._canMarkPto(department) || this._isCleanlinessAdmin;
   }
 
   _sendPto(kind, employeeId) {
@@ -401,7 +411,7 @@ class CleanlinessReport extends HTMLElement {
       const subList = ranked.length
         ? `<div class="sub-label">Submitted (${ranked.length})</div><div class="sub-list">${ranked.map((s, i) => {
             const types = [s.a.vehicleScore != null ? `🚐 ${s.a.vehicleScore}%` : '', s.a.officeScore != null ? `🏢 ${s.a.officeScore}%` : ''].filter(Boolean).join(' · ');
-            const fix = canFixThisWeek && this._canMarkPto(s.m.department)
+            const fix = canFixThisWeek && this._canFix(s.m.department)
               ? `<a class="fix-link" href="/cleanliness-audit?edit=${encodeURIComponent(s.m._id)}" title="Fix ${esc(s.m.name)}'s audit">Fix</a>` : '';
             return `<div class="sub-row"><span class="sub-rank">${i + 1}</span><span class="sub-name">${esc(s.m.name)}</span>${types ? `<span class="sub-types">${types}</span>` : ''}<span class="sub-score" style="color:${scoreColor(s.a.score)}">${s.a.score}%</span>${fix}</div>`;
           }).join('')}</div>`
@@ -413,7 +423,7 @@ class CleanlinessReport extends HTMLElement {
           ${subList}
           ${nonsubs.length
             ? `<div class="nonsub-label">Did not submit (${nonsubs.length})</div><div class="chips">${nonsubs.map(m => {
-                const fix = canFixThisWeek && this._canMarkPto(m.department)
+                const fix = canFixThisWeek && this._canFix(m.department)
                   ? `<a class="fix-link chip-fix" href="/cleanliness-audit?edit=${encodeURIComponent(m._id)}" title="Submit for ${esc(m.name)}">Submit for them</a>` : '';
                 return `<span class="chip">${esc(m.name)}<span class="tag">${m.owesVehicle && m.owesOffice ? '🚐🏢' : m.owesVehicle ? '🚐' : '🏢'}</span>${fix}</span>`;
               }).join('')}</div>`
