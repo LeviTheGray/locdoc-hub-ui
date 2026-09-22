@@ -26,6 +26,10 @@
  * `siteVisits`: [{ label, notes }] — freeform, part of the same Review section, captured only on
  * this meeting's record (no separate collection).
  *
+ * Review section also has a static "Open Tech KPI Hub" link (app.openingmanagement.com/techKpiHub,
+ * target=_blank) — not per-employee data, no init-data field for it; the manager and employee just
+ * pull up individual metrics together in the work order app itself while reviewing.
+ *
  * Editor: Add → Embed Code → Custom Element → source = this file,
  * tag name `one-on-one`, element ID `oneOnOne`.
  */
@@ -195,6 +199,12 @@ class OneOnOne extends HTMLElement {
                   <button type="button" class="sv-add-btn" data-action="add-site-visit">+ Add site visit</button>
                 </div>
               </div>
+              <div class="subsection"><div class="subsection-title">Tech KPI Report</div></div>
+              <div class="field" style="margin-left:34px">
+                <div class="sub" style="margin-bottom:8px">Go over their individual metrics together in the work order app.</div>
+                <a class="sv-add-btn" style="display:inline-block;text-decoration:none" href="https://app.openingmanagement.com/techKpiHub" target="_blank" rel="noopener noreferrer">Open Tech KPI Hub →</a>
+              </div>
+
               <div class="field" style="margin-left:34px"><label for="f_areasOfImprovement">Areas for improvement</label><textarea id="f_areasOfImprovement" placeholder="Whatever came out of reviewing the numbers and site visits together"></textarea></div>
 
               <div class="section-num"><span class="n">2</span><h3>Conversation</h3></div>
