@@ -162,6 +162,10 @@ class DriverScorecardUpload extends HTMLElement {
   }
 
   _render() {
+    // Guard against attributeChangedCallback firing before connectedCallback (a real crash hit
+    // 2026-09-22 — "Cannot set properties of null" — Wix can set init-data on the element before
+    // it's connected to the DOM, so _renderShell() may not have run yet).
+    this._renderShell();
     const main = this.shadowRoot.querySelector('[data-main]');
     if (!this._loaded) { main.innerHTML = `<p class="sub">Loading…</p>`; return; }
     if (this._error) {
