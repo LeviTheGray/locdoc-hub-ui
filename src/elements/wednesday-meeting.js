@@ -892,7 +892,7 @@ class WednesdayMeeting extends HTMLElement {
       </div>`;
     }).join('');
     const avgs = RULES.map(rule => { const v = ra[rule.key]; return `<div class="drv-avg" style="background:${drvColor(v)}33;border:1.5px solid ${drvColor(v)}"><div class="l">${rule.label}</div><div class="v">${v == null ? '—' : Number(v).toFixed(2)}</div></div>`; }).join('');
-    const PARKED_LABELS = { no_employee_match: 'Not in roster', inactive: 'Inactive / departed', pto: 'On PTO' };
+    const PARKED_LABELS = { no_employee_match: 'Not in roster', inactive: 'Inactive / departed', pto: 'On PTO', no_activity: 'No activity this week' };
     const parkedHtml = parked.length ? `
       <div class="drv-tiles-card" style="margin-top:14px">
         <div class="drv-parked-title">🅿️ Parked (${parked.length}) — van reported, excluded from ranking</div>
