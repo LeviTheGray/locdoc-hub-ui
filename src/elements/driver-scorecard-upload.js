@@ -97,7 +97,11 @@ class DriverScorecardUpload extends HTMLElement {
     this._uploading = false;
     if (p.ok) {
       const parkedNote = p.parkedCount ? ` (${p.parkedCount} parked)` : '';
-      this._msg = { ok: true, text: `Loaded ${p.count} driver(s) for ${p.weekLabel}${parkedNote}.` };
+      // extractionMethod (2026-09-22): 'deterministic' is the normal/expected path — 'claude-fallback'
+      // means the PDF parser threw and Claude picked it up instead, worth knowing without digging
+      // through Site Monitoring logs.
+      const methodNote = p.extractionMethod === 'claude-fallback' ? ' (via AI fallback — the direct parser had trouble with this PDF)' : '';
+      this._msg = { ok: true, text: `Loaded ${p.count} driver(s) for ${p.weekLabel}${parkedNote}.${methodNote}` };
       this._fileName = '';
       this._pdfBase64 = '';
     } else {
