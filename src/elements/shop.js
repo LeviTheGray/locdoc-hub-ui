@@ -156,6 +156,19 @@ class LocDocShop extends HTMLElement {
     this._stockLines = [{ description: '', quantity: 1, unitPrice: '', link: '' }];
     this._copyMsg = '';
     this._notesMsg = ''; // transient "Notes saved." confirmation on the review screen
+
+    // ---- Admin tab — Catalog sub-view (uniform items). Added 2026-10-07 per Levi: the Wix
+    // Stores app (and its own "Store Products" dashboard screen) was disabled sitewide to kill off
+    // a pile of confusing dead pages from the pre-Hub system, but the Hub's uniform catalog reads
+    // straight from the underlying Stores/Products collection regardless — so this gives a shop
+    // admin somewhere to add/edit/retire uniform items without resurrecting that dashboard. See
+    // backend/shopCatalogAdmin.web.js's header for the full story.
+    this._catalogView = false;   // toggled from the Orders queue header, like _stockFormOpen
+    this._catalogItems = [];
+    this._catalogLoaded = false;
+    this._catalogMsg = ''; // shares _adminBusy/_adminErr with the rest of the Admin tab (set by _adminSend/_applyAdminResult)
+    this._catalogEditing = null; // { productId?, name, price, image, visible, options:[{label,choices}] } while adding/editing
+    this._catalogImageBusy = false;
   }
 
   connectedCallback() {
@@ -384,15 +397,42 @@ class LocDocShop extends HTMLElement {
       // fulfilment action, there's nothing to refresh the queue for.
       if (this._adminOrder) this._adminOrder.order.adminNotes = data.adminNotes || '';
       this._notesMsg = 'Notes saved.';
+    } else if (kind === 'catalogList') {
+      this._catalogItems = Array.isArray(data.products) ? data.products : [];
+      this._catalogLoaded = true;
+    } else if (kind === 'catalogSave') {
+      this._upsertCatalogItem(data.product);
+      this._catalogEditing = null;
+      this._catalogMsg = 'Saved.';
+    } else if (kind === 'catalogImage') {
+      this._catalogImageBusy = false;
+      if (this._catalogEditing) this._catalogEditing.image = data.url || '';
+    } else if (kind === 'catalogHide') {
+      this._upsertCatalogItem(data.product);
+      this._catalogMsg = data.product && data.product.visible === false ? 'Item hidden.' : 'Item shown.';
+    } else if (kind === 'catalogDelete') {
+      this._catalogItems = this._catalogItems.filter((p) => p.productId !== data.productId);
+      this._catalogMsg = 'Item deleted.';
     }
     this._renderPanel();
   }
 
+  // Replaces the matching item in the loaded list (by productId) or appends it — a save/hide
+  // result patches the list in place instead of triggering a full catalog reload.
+  _upsertCatalogItem(product) {
+    if (!product || !product.productId) return;
+    const i = this._catalogItems.findIndex((p) => p.productId === product.productId);
+    if (i >= 0) this._catalogItems[i] = product;
+    else this._catalogItems.push(product);
+  }
+
   _adminRefresh() { this._adminSend('admin-list', {}); }
+  _catalogRefresh() { this._adminSend('admin-catalogList', {}); }
 
   _adminPanel() {
     if (this._adminOrder) return this._adminReview();
     if (this._stockFormOpen) return this._stockOrderForm();
+    if (this._catalogView) return this._catalogPanel();
 
     if (!this._adminLoaded && !this._adminBusy) { this._adminRefresh(); }
 
@@ -430,13 +470,89 @@ class LocDocShop extends HTMLElement {
     return `
       <div class="row" style="justify-content:space-between;align-items:baseline">
         <h2>Order queue</h2>
-        <button class="btn" data-stock-new>+ New stock order</button>
+        <div class="row" style="gap:8px">
+          <button class="btn" data-catalog-open style="background:transparent;color:var(--gray-600)">Uniform Catalog</button>
+          <button class="btn" data-stock-new>+ New stock order</button>
+        </div>
       </div>
       ${this._adminMsg ? `<div class="ok">${this._esc(this._adminMsg)}</div>` : ''}
       ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
       ${this._adminLoaded ? filterUI : ''}
       ${this._adminBusy && !this._adminLoaded ? '<div class="empty">Loading orders…</div>' : ''}
       ${this._adminLoaded && !shown.length ? '<div class="empty">No orders match this filter.</div>' : rows}`;
+  }
+
+  // Uniform Catalog sub-view — add/edit/retire the Stores/Products items the Uniform tab's form
+  // reads from (see backend/shopCatalogAdmin.web.js's header for why this exists).
+  _catalogPanel() {
+    if (this._catalogEditing) return this._catalogForm();
+    if (!this._catalogLoaded && !this._adminBusy) { this._catalogRefresh(); }
+
+    const items = this._catalogItems.map((p) => `
+      <div class="ord">
+        <div class="h" style="display:flex;align-items:center;gap:10px">
+          ${p.image ? `<img src="${this._escA(p.image)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0">` : ''}
+          <b>${this._esc(p.name)}</b>
+          ${p.visible === false ? '<span class="st" style="background:var(--gray-600)">Hidden</span>' : ''}
+        </div>
+        <div class="m">$${Number(p.price || 0).toFixed(2)}${p.options.length ? ' · ' + p.options.map((o) => this._esc(o.label)).join(', ') : ''}</div>
+        <div class="row" style="margin-top:8px;gap:8px">
+          <button class="btn" data-catalog-edit="${this._escA(p.productId)}">Edit</button>
+          <button class="btn" data-catalog-toggle="${this._escA(p.productId)}" style="background:transparent;color:var(--gray-600)">${p.visible === false ? 'Show' : 'Hide'}</button>
+          <button class="btn" data-catalog-delete="${this._escA(p.productId)}" style="background:transparent;color:#b91c1c">Delete</button>
+        </div>
+      </div>`).join('');
+
+    return `
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <h2>Uniform Catalog</h2>
+        <div class="row" style="gap:8px">
+          <button class="btn" data-catalog-add>+ Add item</button>
+          <button class="btn" data-catalog-back style="background:transparent;color:var(--gray-600)">← Back to queue</button>
+        </div>
+      </div>
+      <div class="m" style="color:var(--gray-400);font-size:12px;margin-bottom:12px">
+        Edits here go straight to the catalog the Uniform tab reads from.
+      </div>
+      ${this._catalogMsg ? `<div class="ok">${this._esc(this._catalogMsg)}</div>` : ''}
+      ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
+      ${this._adminBusy && !this._catalogLoaded ? '<div class="empty">Loading catalog…</div>' : ''}
+      ${this._catalogLoaded && !items.length ? '<div class="empty">No items in the catalog yet.</div>' : items}`;
+  }
+
+  _catalogForm() {
+    const e = this._catalogEditing;
+    const opts = e.options.map((o, i) => `
+      <div class="row" style="gap:8px;margin-bottom:6px">
+        <input type="text" placeholder="Option name (e.g. Size)" style="flex:1" data-catalog-opt-label="${i}" value="${this._escA(o.label)}">
+        <input type="text" placeholder="Choices, comma separated (e.g. S, M, L, XL)" style="flex:2" data-catalog-opt-choices="${i}" value="${this._escA(o.choices.join(', '))}">
+        <button class="btn" data-catalog-opt-remove="${i}" style="background:transparent;color:var(--gray-600)">✕</button>
+      </div>`).join('');
+
+    return `
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <h2>${e.productId ? 'Edit item' : 'New item'}</h2>
+        <button class="btn" data-catalog-cancel style="background:transparent;color:var(--gray-600)">← Back to catalog</button>
+      </div>
+      ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
+      <div class="grid">
+        <label class="f">Name<input type="text" data-catalog-name value="${this._escA(e.name)}"></label>
+        <label class="f">Price ($)<input type="number" min="0" step="0.01" data-catalog-price value="${this._escA(e.price)}"></label>
+      </div>
+      <label class="f" style="margin-top:10px">Image
+        ${e.image ? `<img src="${this._escA(e.image)}" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ''}
+        <input type="file" accept="image/*" data-catalog-image-file>
+      </label>
+      ${this._catalogImageBusy ? '<div class="m">Uploading…</div>' : ''}
+      <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-size:14px;font-weight:600;color:var(--gray-600)">
+        <input type="checkbox" data-catalog-visible ${e.visible !== false ? 'checked' : ''}> Visible in the Shop
+      </label>
+      <label class="f" style="margin-bottom:6px">Options (e.g. Size, Color) — leave blank for a one-size item</label>
+      ${opts}
+      <button class="btn" data-catalog-opt-add style="background:transparent;color:var(--gray-600)">+ Add option</button>
+      <div class="row" style="margin-top:16px">
+        <button class="btn" data-catalog-save ${this._adminBusy ? 'disabled' : ''}>${this._adminBusy ? 'Saving…' : 'Save'}</button>
+      </div>`;
   }
 
   // A stock order draws from the company budget, not a member's points — this is a separate, simpler
@@ -849,6 +965,7 @@ class LocDocShop extends HTMLElement {
 
   _wireAdmin(panel) {
     if (this._stockFormOpen) { this._wireStockForm(panel); return; }
+    if (this._catalogView) { this._wireCatalog(panel); return; }
 
     panel.querySelectorAll('[data-review]').forEach((b) =>
       b.addEventListener('click', () => this._adminSend('admin-review', { orderId: b.getAttribute('data-review') })));
@@ -932,6 +1049,101 @@ class LocDocShop extends HTMLElement {
       this._adminErr = '';
       this._adminMsg = '';
       this._renderPanel();
+    });
+
+    const catalogOpen = panel.querySelector('[data-catalog-open]');
+    if (catalogOpen) catalogOpen.addEventListener('click', () => {
+      this._catalogView = true;
+      this._adminErr = '';
+      this._adminMsg = '';
+      this._renderPanel();
+    });
+  }
+
+  _wireCatalog(panel) {
+    if (this._catalogEditing) { this._wireCatalogForm(panel); return; }
+
+    const back = panel.querySelector('[data-catalog-back]');
+    if (back) back.addEventListener('click', () => { this._catalogView = false; this._adminErr = ''; this._catalogMsg = ''; this._renderPanel(); });
+
+    const add = panel.querySelector('[data-catalog-add]');
+    if (add) add.addEventListener('click', () => {
+      this._catalogEditing = { name: '', price: '', image: '', visible: true, options: [] };
+      this._adminErr = '';
+      this._renderPanel();
+    });
+
+    panel.querySelectorAll('[data-catalog-edit]').forEach((b) => b.addEventListener('click', () => {
+      const p = this._catalogItems.find((x) => x.productId === b.getAttribute('data-catalog-edit'));
+      if (!p) return;
+      // Deep-copy so cancelling the form doesn't leave a half-edited object sitting in the list.
+      this._catalogEditing = { ...p, options: p.options.map((o) => ({ label: o.label, choices: [...o.choices] })) };
+      this._adminErr = '';
+      this._renderPanel();
+    }));
+
+    panel.querySelectorAll('[data-catalog-toggle]').forEach((b) => b.addEventListener('click', () => {
+      this._catalogMsg = '';
+      this._adminSend('admin-catalogHide', { productId: b.getAttribute('data-catalog-toggle') });
+    }));
+
+    panel.querySelectorAll('[data-catalog-delete]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.getAttribute('data-catalog-delete');
+      const p = this._catalogItems.find((x) => x.productId === id);
+      if (!confirm(`Delete "${p ? p.name : 'this item'}"? This can't be undone — use Hide instead if it might come back.`)) return;
+      this._catalogMsg = '';
+      this._adminSend('admin-catalogDelete', { productId: id });
+    }));
+  }
+
+  _wireCatalogForm(panel) {
+    const e = this._catalogEditing;
+
+    const cancel = panel.querySelector('[data-catalog-cancel]');
+    if (cancel) cancel.addEventListener('click', () => { this._catalogEditing = null; this._adminErr = ''; this._renderPanel(); });
+
+    panel.querySelector('[data-catalog-name]').addEventListener('input', (ev) => { e.name = ev.target.value; });
+    panel.querySelector('[data-catalog-price]').addEventListener('input', (ev) => { e.price = ev.target.value; });
+    panel.querySelector('[data-catalog-visible]').addEventListener('change', (ev) => { e.visible = ev.target.checked; });
+
+    const imageFile = panel.querySelector('[data-catalog-image-file]');
+    if (imageFile) imageFile.addEventListener('change', () => {
+      const file = imageFile.files && imageFile.files[0];
+      if (!file) return;
+      this._catalogImageBusy = true;
+      this._renderPanel();
+      const reader = new FileReader();
+      reader.onload = () => this._adminSend('admin-catalogImage', { dataUrl: String(reader.result || '') });
+      reader.onerror = () => { this._catalogImageBusy = false; this._adminErr = 'Could not read that image — try again.'; this._renderPanel(); };
+      reader.readAsDataURL(file);
+    });
+
+    panel.querySelectorAll('[data-catalog-opt-label]').forEach((i) =>
+      i.addEventListener('input', () => { e.options[Number(i.getAttribute('data-catalog-opt-label'))].label = i.value; }));
+    panel.querySelectorAll('[data-catalog-opt-choices]').forEach((i) =>
+      i.addEventListener('input', () => {
+        e.options[Number(i.getAttribute('data-catalog-opt-choices'))].choices = i.value.split(',').map((s) => s.trim()).filter(Boolean);
+      }));
+    panel.querySelectorAll('[data-catalog-opt-remove]').forEach((b) =>
+      b.addEventListener('click', () => { e.options.splice(Number(b.getAttribute('data-catalog-opt-remove')), 1); this._renderPanel(); }));
+
+    const optAdd = panel.querySelector('[data-catalog-opt-add]');
+    if (optAdd) optAdd.addEventListener('click', () => { e.options.push({ label: '', choices: [] }); this._renderPanel(); });
+
+    const save = panel.querySelector('[data-catalog-save]');
+    if (save) save.addEventListener('click', () => {
+      const name = (e.name || '').trim();
+      const price = Number(e.price);
+      if (!name) { this._adminErr = 'Name is required.'; this._renderPanel(); return; }
+      if (!Number.isFinite(price) || price < 0) { this._adminErr = 'Price must be a non-negative number.'; this._renderPanel(); return; }
+      this._adminErr = '';
+      this._adminSend('admin-catalogSave', {
+        product: {
+          productId: e.productId || undefined,
+          name, price, image: e.image || '', visible: e.visible !== false,
+          options: e.options.filter((o) => (o.label || '').trim() && o.choices.length),
+        },
+      });
     });
   }
 
