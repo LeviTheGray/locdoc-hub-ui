@@ -413,6 +413,9 @@ class LocDocShop extends HTMLElement {
     } else if (kind === 'catalogDelete') {
       this._catalogItems = this._catalogItems.filter((p) => p.productId !== data.productId);
       this._catalogMsg = 'Item deleted.';
+    } else if (kind === 'catalogMigrate') {
+      this._catalogMsg = `Imported ${data.imported} item(s) from the old Stores catalog${data.skipped ? ` (${data.skipped} already imported)` : ''}.`;
+      this._catalogRefresh();
     }
     this._renderPanel();
   }
@@ -517,7 +520,11 @@ class LocDocShop extends HTMLElement {
       ${this._catalogMsg ? `<div class="ok">${this._esc(this._catalogMsg)}</div>` : ''}
       ${this._adminErr ? `<div class="short">${this._esc(this._adminErr)}</div>` : ''}
       ${this._adminBusy && !this._catalogLoaded ? '<div class="empty">Loading catalog…</div>' : ''}
-      ${this._catalogLoaded && !items.length ? '<div class="empty">No items in the catalog yet.</div>' : items}`;
+      ${this._catalogLoaded && !items.length ? `
+        <div class="empty">No items yet.</div>
+        <div class="row" style="justify-content:center;margin-top:10px">
+          <button class="btn" data-catalog-migrate ${this._adminBusy ? 'disabled' : ''}>Import from old Stores catalog (one-time)</button>
+        </div>` : items}`;
   }
 
   _catalogForm() {
@@ -1071,6 +1078,12 @@ class LocDocShop extends HTMLElement {
       this._catalogEditing = { name: '', price: '', image: '', visible: true, options: [] };
       this._adminErr = '';
       this._renderPanel();
+    });
+
+    const migrate = panel.querySelector('[data-catalog-migrate]');
+    if (migrate) migrate.addEventListener('click', () => {
+      this._catalogMsg = '';
+      this._adminSend('admin-catalogMigrate', {});
     });
 
     panel.querySelectorAll('[data-catalog-edit]').forEach((b) => b.addEventListener('click', () => {
