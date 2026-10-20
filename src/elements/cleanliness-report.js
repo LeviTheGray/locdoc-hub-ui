@@ -233,9 +233,10 @@ class CleanlinessReport extends HTMLElement {
   }
 
   // Departments the current manager can mark/unmark PTO for — "" (not a manager) can't act on
-  // anyone, "Operations" can act on everyone. Server re-checks this on every mark/unmark, so a
-  // stale or forged client value can't get someone unauthorized PTO'd.
+  // anyone, "Operations" or cleanlinessAdmin can act on everyone. Server re-checks this on every
+  // mark/unmark, so a stale or forged client value can't get someone unauthorized PTO'd.
   _canMarkPto(department) {
+    if (this._isCleanlinessAdmin) return true;
     if (!this._meScope) return false;
     if (this._meScope === 'Operations') return true;
     const owned = this._meScope.split(',').map(s => s.trim());
@@ -243,11 +244,9 @@ class CleanlinessReport extends HTMLElement {
     return depts.some(d => owned.includes(d));
   }
 
-  // Whether the current viewer can Fix/Submit-for a given department's audit — department scope,
-  // OR the cleanlinessAdmin tool (edit anyone's, regardless of department). Server re-checks this
-  // independently in adminLoadAudit/adminSaveAudit, so a stale client value can't grant a real edit.
+  // Same rule as PTO today; kept separate so the two permissions can diverge without touching callers.
   _canFix(department) {
-    return this._canMarkPto(department) || this._isCleanlinessAdmin;
+    return this._canMarkPto(department);
   }
 
   _sendPto(kind, employeeId) {
@@ -323,7 +322,7 @@ class CleanlinessReport extends HTMLElement {
     }).join('');
 
     const picker = this._ptoPickerOpen ? this._ptoPickerHtml(ptoIds) : '';
-    const toggleBtn = this._meScope
+    const toggleBtn = (this._meScope || this._isCleanlinessAdmin)
       ? `<button class="pto-toggle" data-action="toggle-pto-picker" ${!canPick && !this._ptoPickerOpen ? 'disabled' : ''}>
           ${this._ptoPickerOpen ? 'Cancel' : '+ Mark PTO'}
         </button>` : '';
