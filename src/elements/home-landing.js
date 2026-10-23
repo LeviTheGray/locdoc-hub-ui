@@ -10,7 +10,7 @@
  * hover lift, icon chips, and the green pill button with the "Opening…" spinner.
  *
  * Data handoff (mirrors hub-home):
- *   • Velo → element :  $w('#homeLanding').setAttribute('init-data', JSON.stringify({ currentUser }))
+ *   • Velo → element :  $w('#homeLanding').setAttribute('init-data', JSON.stringify({ currentUser, calendarSrc }))
  *   • element → Velo :  dispatches a 'navigate' CustomEvent { detail: { key } } for INTERNAL
  *                       destinations; the page code maps key → path and calls wixLocation.to().
  *                       External destinations open in a new tab from inside the element.
@@ -29,10 +29,8 @@ const INTERNAL_KEYS = [
   'meetings', 'benefits', 'events', 'mission-vision',
 ];
 
-// Google Calendar embed. Paste the `src` URL from Google Calendar →
-// Settings → [calendar] → Integrate calendar → "Embed code" (use the URL inside src="…").
-// The calendar must be public or shared with the team to display. Leave '' to hide the band.
-const CALENDAR_EMBED_SRC = 'https://calendar.google.com/calendar/embed?height=300&wkst=1&bgcolor=%23ffffff&ctz=America%2FNew_York&showNav=0&mode=AGENDA&showTitle=0&showDate=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&src=ZjFodDhiNDF1ajhrNjcyMWR1aHY5Z2RudGEwc3Y0ZnJAaW1wb3J0LmNhbGVuZGFyLmdvb2dsZS5jb20&src=M3BwbGg5ZmY2NXBwYXFvanFzc2xzNHNjdDE3aGU4aHNAaW1wb3J0LmNhbGVuZGFyLmdvb2dsZS5jb20&color=%237CB342&color=%23D81B60'; // PLACEHOLDER — e.g. 'https://calendar.google.com/calendar/embed?src=…&ctz=America/New_York'
+// The Team Calendar embed URL arrives via init-data (`calendarSrc`) only for an active employee —
+// it lives in teamwix-v2's backend/homeCalendar.web.js, not here, so it's never in public JS.
 
 // Landing destinations. Internal entries set `internal: true` and dispatch 'navigate';
 // external entries carry an `href` and open in a new tab.
@@ -245,6 +243,7 @@ class HomeLanding extends HTMLElement {
     let parsed = {};
     try { parsed = JSON.parse(json) || {}; } catch (e) { parsed = {}; }
     this._user = parsed.currentUser || null;
+    this._calendarSrc = typeof parsed.calendarSrc === 'string' ? parsed.calendarSrc : '';
     this._render();
   }
 
@@ -267,13 +266,7 @@ class HomeLanding extends HTMLElement {
         <div class="grid-title">Destinations</div>
         <div class="tools-grid" data-cards></div>
       </main>
-      ${CALENDAR_EMBED_SRC ? `
-      <section class="cal-band">
-        <div class="grid-title cal-title">Team Calendar</div>
-        <div class="cal-frame">
-          <iframe src="${CALENDAR_EMBED_SRC}" title="Team Calendar" loading="lazy" scrolling="no"></iframe>
-        </div>
-      </section>` : ''}`;
+      <div data-cal></div>`;
     this.shadowRoot.addEventListener('click', (e) => {
       const info = e.target.closest('[data-info]');
       if (info) { e.stopPropagation(); this._toggleInfo(info.getAttribute('data-info')); return; }
@@ -340,6 +333,15 @@ class HomeLanding extends HTMLElement {
     root.querySelector('[data-headline]').textContent =
       first ? `Welcome back, ${first}` : 'LocDoc Team Portal';
     root.querySelector('[data-cards]').innerHTML = DESTINATIONS.map(d => this._card(d)).join('');
+    // Only an https Google Calendar embed is accepted, so nothing else can be injected as an iframe.
+    const src = this._calendarSrc && this._calendarSrc.startsWith('https://calendar.google.com/') ? this._calendarSrc : '';
+    root.querySelector('[data-cal]').innerHTML = src ? `
+      <section class="cal-band">
+        <div class="grid-title cal-title">Team Calendar</div>
+        <div class="cal-frame">
+          <iframe src="${src.replace(/"/g, '&quot;')}" title="Team Calendar" loading="lazy" scrolling="no"></iframe>
+        </div>
+      </section>` : '';
   }
 }
 
